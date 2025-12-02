@@ -14,7 +14,7 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({
   totalExpenses,
   remaining,
   budgetUsedPercent,
-  darkMode,
+  // darkMode,
 }) => {
   const formatAmount = (amount: number): string => {
     return amount.toLocaleString('en-US', {

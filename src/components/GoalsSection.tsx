@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, Target, TrendingUp, Calendar } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calendar } from 'lucide-react';
 import ProgressRing from './ProgressRing';
 
 interface SavingsGoal {
-  id: number;
+  id: string;
   name: string;
   targetAmount: number;
   currentAmount: number;
@@ -15,8 +15,8 @@ interface GoalsSectionProps {
   goals: SavingsGoal[];
   onAddGoal: () => void;
   onEditGoal: (goal: SavingsGoal) => void;
-  onDeleteGoal: (id: number) => void;
-  onUpdateProgress: (id: number, amount: number) => void;
+  onDeleteGoal: (id: string) => void;
+  onUpdateProgress: (id: string, amount: number) => void;
   darkMode: boolean;
 }
 
@@ -30,8 +30,8 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
   onUpdateProgress,
   darkMode,
 }) => {
-  const [expandedGoal, setExpandedGoal] = useState<number | null>(null);
-  const [customAmount, setCustomAmount] = useState<Record<number, string>>({});
+  const [expandedGoal, setExpandedGoal] = useState<string | null>(null);
+  const [customAmount, setCustomAmount] = useState<Record<string, string>>({});
 
   const formatCurrency = (amount: number): string => {
     return amount.toLocaleString('en-US', {
@@ -64,11 +64,11 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
     return '#ef4444'; // red
   };
 
-  const handleQuickAdd = (goalId: number, amount: number) => {
+  const handleQuickAdd = (goalId: string, amount: number) => {
     onUpdateProgress(goalId, amount);
   };
 
-  const handleCustomAdd = (goalId: number) => {
+  const handleCustomAdd = (goalId: string) => {
     const amount = parseFloat(customAmount[goalId] || '0');
     if (amount > 0) {
       onUpdateProgress(goalId, amount);

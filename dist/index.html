@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+
+    <!-- Primary Meta Tags -->
+    <title>Budget Tracker - Take Control of Your Finances</title>
+    <meta name="title" content="Budget Tracker - Take Control of Your Finances" />
+    <meta name="description" content="A modern budget and expense tracking application with dark mode, savings goals, analytics, and receipt management. Track your spending, set budgets, and achieve your financial goals." />
+    <meta name="keywords" content="budget, expense tracker, finance, money management, savings goals, personal finance" />
+    <meta name="author" content="Budget Tracker" />
+
+    <!-- Theme Color for Mobile Browsers -->
+    <meta name="theme-color" content="#6366f1" />
+
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Budget" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- iOS Icons -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon.png" />
+
+    <!-- iOS Splash Screens -->
+    <link rel="apple-touch-startup-image" href="/apple-touch-icon.png" />
+
+    <!-- Manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://budget-expense-app-c8262.web.app/" />
+    <meta property="og:title" content="Budget Tracker - Take Control of Your Finances" />
+    <meta property="og:description" content="A modern budget and expense tracking application with dark mode, savings goals, and analytics." />
+    <meta property="og:image" content="/icon-512.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://budget-expense-app-c8262.web.app/" />
+    <meta property="twitter:title" content="Budget Tracker - Take Control of Your Finances" />
+    <meta property="twitter:description" content="A modern budget and expense tracking application with dark mode, savings goals, and analytics." />
+    <meta property="twitter:image" content="/icon-512.png" />
+
+    <!-- Preconnect to external resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- Inline critical CSS for initial loading -->
+    <style>
+      /* Critical CSS for initial render */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        -webkit-text-size-adjust: 100%;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 50%, #fdf2f8 100%);
+        min-height: 100vh;
+        /* iOS safe area support */
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      /* Loading spinner */
+      .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        gap: 1rem;
+      }
+
+      .loading-spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #e5e7eb;
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      .loading-text {
+        color: #6b7280;
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Dark mode support for loading */
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111827;
+        }
+
+        .loading-spinner {
+          border-color: #374151;
+          border-top-color: #818cf8;
+        }
+
+        .loading-text {
+          color: #9ca3af;
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-Cy7kU8kF.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-BxThA0WO.js">
+    <link rel="modulepreload" crossorigin href="/assets/charts-grmioYNZ.js">
+    <link rel="modulepreload" crossorigin href="/assets/icons-CKcewjEP.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DtS3sA21.css">
+  <link rel="manifest" href="/manifest.webmanifest"></head>
+  <body>
+    <div id="root">
+      <!-- Loading state shown before React hydrates -->
+      <div class="loading-container">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Loading Budget Tracker...</p>
+      </div>
+    </div>
+
+    <!-- Noscript fallback -->
+    <noscript>
+      <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; text-align: center; font-family: system-ui, sans-serif;">
+        <div>
+          <h1 style="color: #1f2937; margin-bottom: 1rem;">JavaScript Required</h1>
+          <p style="color: #6b7280;">
+            Budget Tracker requires JavaScript to run. Please enable JavaScript in your browser settings and refresh the page.
+          </p>
+        </div>
+      </div>
+    </noscript>
+
+  </body>
+</html>

@@ -19,6 +19,7 @@ import Toast from "./components/Toast";
 import OverviewCards from "./components/OverviewCards";
 import TransactionList from "./components/TransactionList";
 import TransactionModal from "./components/TransactionModal";
+import SpendingInsights from "./components/SpendingInsights";
 import {
   ExpensesPieChart,
   IncomeExpenseBarChart,
@@ -27,7 +28,7 @@ import {
 } from "./components/Charts";
 import GoalsSection from "./components/GoalsSection";
 import SettingsSection from "./components/SettingsSection";
-import ProgressRing from "./components/ProgressRing";
+import Auth from "./components/Auth";
 
 // Utils
 import { getDateRange, exportToCSV } from "./utils/helpers";
@@ -35,18 +36,32 @@ import { getDateRange, exportToCSV } from "./utils/helpers";
 // Constants
 import {
   STORAGE_KEYS,
-  SAMPLE_TRANSACTIONS,
-  SAMPLE_GOALS,
   DEFAULT_BUDGET_LIMIT,
   EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
   DATE_RANGE_OPTIONS,
   CATEGORY_CONFIG,
   GOAL_COLORS,
+  CURRENCIES,
+  DEFAULT_CURRENCY,
 } from "./config/constants";
+import { db, app } from "./config/firebase";
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  orderBy,
+  setDoc,
+} from "firebase/firestore";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 
 // Types
 interface Transaction {
-  id: number;
+  id: string;
   type: "income" | "expense";
   amount: number;
   category: string;
@@ -58,7 +73,7 @@ interface Transaction {
 }
 
 interface SavingsGoal {
-  id: number;
+  id: string;
   name: string;
   targetAmount: number;
   currentAmount: number;
@@ -82,31 +97,25 @@ interface ToastData {
   onUndo?: () => void;
 }
 
+// User settings interface
+interface UserSettings {
+  currency: string;
+  emailReports: boolean;
+  reportEmail: string;
+  customExpenseCategories: { name: string; color: string; budget?: number }[];
+  customIncomeCategories: { name: string; color: string }[];
+}
+
+const DEFAULT_USER_SETTINGS: UserSettings = {
+  currency: DEFAULT_CURRENCY,
+  emailReports: false,
+  reportEmail: '',
+  customExpenseCategories: [],
+  customIncomeCategories: [],
+};
+
 const App: React.FC = () => {
   // Persisted State
-  const [transactions, setTransactions] = useLocalStorage<Transaction[]>(
-    STORAGE_KEYS.TRANSACTIONS,
-    SAMPLE_TRANSACTIONS,
-  );
-  const [budgetLimit, setBudgetLimit] = useLocalStorage<number>(
-    STORAGE_KEYS.BUDGET_LIMIT,
-    DEFAULT_BUDGET_LIMIT,
-  );
-  const [categoryBudgets, setCategoryBudgets] = useLocalStorage<
-    Record<string, number>
-  >(
-    STORAGE_KEYS.CATEGORY_BUDGETS,
-    Object.fromEntries(
-      EXPENSE_CATEGORIES.map((cat) => [
-        cat,
-        CATEGORY_CONFIG[cat]?.budget || 200,
-      ]),
-    ),
-  );
-  const [savingsGoals, setSavingsGoals] = useLocalStorage<SavingsGoal[]>(
-    STORAGE_KEYS.SAVINGS_GOALS,
-    SAMPLE_GOALS,
-  );
   const [darkMode, setDarkMode] = useLocalStorage<boolean>(
     STORAGE_KEYS.DARK_MODE,
     false,
@@ -121,7 +130,6 @@ const App: React.FC = () => {
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [lastDeleted, setLastDeleted] = useState<Transaction | null>(null);
 
   // Filters
   const [filterCategory, setFilterCategory] = useState("all");
@@ -139,10 +147,234 @@ const App: React.FC = () => {
     color: GOAL_COLORS[0],
   });
 
+  // Auth State
+  const [user, setUser] = useState<any>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // User Settings State
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
+
   // Show toast helper
   const showToast = useCallback((message: string, onUndo?: () => void) => {
     setToast({ message, onUndo });
   }, []);
+
+  // Firestore transactions state
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
+  // User-scoped transactions - only load when user is authenticated
+  React.useEffect(() => {
+    if (!db ||!user) {
+      setTransactions([]);
+      setIsDataLoading(false);
+      return;
+    }
+    setIsDataLoading(true);
+    const q = query(
+      collection(db, `users/${user.uid}/transactions`),
+      orderBy("date", "desc")
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const txs: Transaction[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          type: data.type,
+          amount: data.amount,
+          category: data.category,
+          description: data.description,
+          date: data.date,
+          receipt: data.receipt ?? null,
+          isRecurring: data.isRecurring,
+          recurringFrequency: data.recurringFrequency,
+        };
+      });
+      setTransactions(txs);
+      setIsDataLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const addTransaction = async (tx: Omit<Transaction, "id">) => {
+    if (!db || !user) return;
+    await addDoc(collection(db, `users/${user.uid}/transactions`), tx);
+  };
+
+  const updateTransaction = async (id: string | number, tx: Partial<Transaction>) => {
+    if (!db || !user) return;
+    await updateDoc(doc(db, `users/${user.uid}/transactions`, String(id)), tx);
+  };
+
+  const deleteTransaction = async (id: string | number) => {
+    if (!db || !user) return;
+    await deleteDoc(doc(db, `users/${user.uid}/transactions`, String(id)));
+  };
+
+  // Firestore logic for savingsGoals
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
+
+  // User-scoped savings goals
+  React.useEffect(() => {
+    if (!db || !user) {
+      setSavingsGoals([]);
+      return;
+    }
+    const q = collection(db, `users/${user.uid}/goals`);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const goals: SavingsGoal[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          name: data.name,
+          targetAmount: data.targetAmount,
+          currentAmount: data.currentAmount,
+          deadline: data.deadline,
+          color: data.color,
+        };
+      });
+      setSavingsGoals(goals);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Function to add a goal to Firestore
+  const addGoal = async (goal: Omit<SavingsGoal, "id">) => {
+    if (!db || !user) return;
+    await addDoc(collection(db, `users/${user.uid}/goals`), goal);
+  };
+
+  // Function to update a goal in Firestore
+  const updateGoal = async (id: string, goal: Partial<SavingsGoal>) => {
+    if (!db || !user) return;
+    await updateDoc(doc(db, `users/${user.uid}/goals`, id), goal);
+  };
+
+  // Function to delete a goal from Firestore
+  const deleteGoal = async (id: string) => {
+    if (!db || !user) return;
+    await deleteDoc(doc(db, `users/${user.uid}/goals`, id));
+  };
+
+  // Firestore logic for budgetLimit and categoryBudgets
+  const [budgetLimit, setBudgetLimit] = useState<number>(DEFAULT_BUDGET_LIMIT);
+  const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>(
+    Object.fromEntries(EXPENSE_CATEGORIES.map((cat) => [cat, CATEGORY_CONFIG[cat]?.budget || 200]))
+  );
+
+  // User-scoped budgets
+  React.useEffect(() => {
+    if (!db || !user) {
+      setBudgetLimit(DEFAULT_BUDGET_LIMIT);
+      setCategoryBudgets(
+        Object.fromEntries(EXPENSE_CATEGORIES.map((cat) => [cat, CATEGORY_CONFIG[cat]?.budget || 200]))
+      );
+      return;
+    }
+    const budgetDocRef = doc(db, `users/${user.uid}/settings`, "budgets");
+    const unsubscribe = onSnapshot(budgetDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setBudgetLimit(data.budgetLimit ?? DEFAULT_BUDGET_LIMIT);
+        setCategoryBudgets(data.categoryBudgets ?? {});
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Function to update budgets in Firestore
+  const updateBudgets = async (newBudgetLimit: number, newCategoryBudgets: Record<string, number>) => {
+    // Update local state immediately for responsive UI
+    setBudgetLimit(newBudgetLimit);
+    setCategoryBudgets(newCategoryBudgets);
+    
+    // Persist to Firestore
+    if (!db || !user) return;
+    const budgetDocRef = doc(db, `users/${user.uid}/settings`, "budgets");
+    try {
+      await setDoc(budgetDocRef, {
+        budgetLimit: newBudgetLimit,
+        categoryBudgets: newCategoryBudgets,
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error saving budgets:', error);
+      // Revert on error would require storing previous values
+    }
+  };
+
+  // User-scoped settings (currency, email reports, custom categories)
+  React.useEffect(() => {
+    if (!db || !user) {
+      setUserSettings(DEFAULT_USER_SETTINGS);
+      return;
+    }
+    const settingsDocRef = doc(db, `users/${user.uid}/settings`, "preferences");
+    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setUserSettings({
+          currency: data.currency ?? DEFAULT_CURRENCY,
+          emailReports: data.emailReports ?? false,
+          reportEmail: data.reportEmail ?? '',
+          customExpenseCategories: data.customExpenseCategories ?? [],
+          customIncomeCategories: data.customIncomeCategories ?? [],
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Function to update user settings in Firestore
+  const updateUserSettings = async (newSettings: Partial<UserSettings>) => {
+    if (!db || !user) return;
+    const settingsDocRef = doc(db, `users/${user.uid}/settings`, "preferences");
+    await setDoc(settingsDocRef, newSettings, { merge: true });
+  };
+
+  // Computed categories (default + custom)
+  const expenseCategories = [
+    ...EXPENSE_CATEGORIES,
+    ...userSettings.customExpenseCategories.map(c => c.name),
+  ];
+  const incomeCategories = [
+    ...INCOME_CATEGORIES,
+    ...userSettings.customIncomeCategories.map(c => c.name),
+  ];
+
+  // Get currency symbol
+  const getCurrencySymbol = () => {
+    const currency = CURRENCIES.find(c => c.code === userSettings.currency);
+    return currency?.symbol || '$';
+  };
+
+  // Get current currency symbol for display
+  const currencySymbol = getCurrencySymbol();
+
+  // Auth effect
+  React.useEffect(() => {
+    const auth = getAuth(app!);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthChecked(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Check auth state
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">Loading Budget Tracker...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth onAuth={setUser} />;
+  }
 
   // Calculations
   const { start: filterStart, end: filterEnd } = getDateRange(filterDateRange);
@@ -215,22 +447,18 @@ const App: React.FC = () => {
   });
 
   // Handlers
-  const handleAddTransaction = (formData: TransactionFormData) => {
+  const handleAddTransaction = async (formData: TransactionFormData) => {
     if (editingTransaction) {
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === editingTransaction.id
-            ? { ...t, ...formData, amount: parseFloat(formData.amount) }
-            : t,
-        ),
-      );
+      await updateTransaction(editingTransaction.id, {
+        ...formData,
+        amount: parseFloat(formData.amount),
+      });
       showToast("Transaction updated!");
       setEditingTransaction(null);
     } else {
-      const newTransaction: Transaction = {
-        id: Date.now(),
+      const newTransaction = {
         type: formData.type,
-        amount: parseFloat(formData.amount),
+        amount: Number(formData.amount),
         category: formData.category,
         description: formData.description,
         date: formData.date,
@@ -238,7 +466,7 @@ const App: React.FC = () => {
         isRecurring: formData.isRecurring,
         recurringFrequency: formData.recurringFrequency,
       };
-      setTransactions((prev) => [newTransaction, ...prev]);
+      await addTransaction(newTransaction);
       showToast("Transaction added!");
     }
     setShowAddModal(false);
@@ -249,15 +477,11 @@ const App: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleDeleteTransaction = (id: number) => {
+  const handleDeleteTransaction = async (id: string) => {
     const transaction = transactions.find((t) => t.id === id);
     if (transaction) {
-      setLastDeleted(transaction);
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
-      showToast("Transaction deleted", () => {
-        setTransactions((prev) => [transaction, ...prev]);
-        setLastDeleted(null);
-      });
+      await deleteTransaction(id);
+      showToast("Transaction deleted");
     }
   };
 
@@ -268,32 +492,26 @@ const App: React.FC = () => {
     }
 
     if (editingGoal) {
-      setSavingsGoals((prev) =>
-        prev.map((g) =>
-          g.id === editingGoal.id
-            ? {
-                ...g,
-                name: goalForm.name,
-                targetAmount: parseFloat(goalForm.targetAmount),
-                currentAmount: parseFloat(goalForm.currentAmount) || 0,
-                deadline: goalForm.deadline,
-                color: goalForm.color,
-              }
-            : g,
-        ),
-      );
+      updateGoal(editingGoal.id, {
+        ...goalForm,
+        targetAmount: parseFloat(goalForm.targetAmount),
+        currentAmount: parseFloat(goalForm.currentAmount) || 0,
+        deadline: goalForm.deadline,
+        color: goalForm.color,
+      });
       showToast("Goal updated!");
       setEditingGoal(null);
     } else {
+      // When creating a new savings goal, use a string ID
       const newGoal: SavingsGoal = {
-        id: Date.now(),
+        id: Date.now().toString(), // or use a UUID generator for better uniqueness
         name: goalForm.name,
         targetAmount: parseFloat(goalForm.targetAmount),
         currentAmount: parseFloat(goalForm.currentAmount) || 0,
         deadline: goalForm.deadline,
         color: goalForm.color,
       };
-      setSavingsGoals((prev) => [...prev, newGoal]);
+      addGoal(newGoal);
       showToast("Goal created!");
     }
 
@@ -319,25 +537,18 @@ const App: React.FC = () => {
     setShowGoalModal(true);
   };
 
-  const handleDeleteGoal = (id: number) => {
-    setSavingsGoals((prev) => prev.filter((g) => g.id !== id));
-    showToast("Goal deleted");
+  const handleDeleteGoal = (id: string) => {
+    deleteGoal(id);
   };
 
-  const handleUpdateGoalProgress = (id: number, amount: number) => {
-    setSavingsGoals((prev) =>
-      prev.map((g) =>
-        g.id === id
-          ? {
-              ...g,
-              currentAmount: Math.min(
-                Math.max(0, g.currentAmount + amount),
-                g.targetAmount,
-              ),
-            }
-          : g,
-      ),
+  const handleUpdateGoalProgress = async (id: string, amount: number) => {
+    const goal = savingsGoals.find((g) => g.id === id);
+    if (!goal) return;
+    const newAmount = Math.min(
+      Math.max(0, goal.currentAmount + amount),
+      goal.targetAmount
     );
+    await updateGoal(id, { currentAmount: newAmount });
     showToast(amount > 0 ? "Added to goal!" : "Removed from goal!");
   };
 
@@ -373,14 +584,11 @@ const App: React.FC = () => {
     : "bg-white border-gray-300 text-gray-900";
 
   return (
-    <div
-      className={`min-h-screen ${bgPrimary} pb-20 md:pb-8 transition-colors duration-300`}
-    >
+
+    <div className={`min-h-screen ${bgPrimary} pb-20 md:pb-8 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
         {/* Header */}
-        <div
-          className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 mb-6 transition-colors duration-300`}
-        >
+        <div className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 mb-6 transition-colors duration-300`}>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
               <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
@@ -391,42 +599,45 @@ const App: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2 md:gap-3">
+              {/* User info */}
+              {user && (
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm font-medium ${textSecondary} hidden sm:inline`}>
+                    {user.displayName || user.email}
+                  </span>
+                  <button
+                    onClick={async () => {
+                      const auth = getAuth(app!);
+                      await signOut(auth);
+                      setUser(null);
+                    }}
+                    className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
               <button
                 onClick={handleExportData}
-                className={`p-2 rounded-lg ${
-                  darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
-                } transition-colors`}
+                className={`p-2 rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors`}
                 title="Export data"
               >
                 <Download className={`w-5 h-5 ${textSecondary}`} />
               </button>
               <button
                 onClick={() => setDarkMode(!darkMode)}
-                className={`p-2 rounded-lg ${
-                  darkMode
-                    ? "hover:bg-gray-700 text-yellow-400"
-                    : "hover:bg-gray-100 text-gray-600"
-                } transition-colors`}
+                className={`p-2 rounded-lg ${darkMode ? "hover:bg-gray-700 text-yellow-400" : "hover:bg-gray-100 text-gray-600"} transition-colors`}
                 title="Toggle dark mode"
               >
-                {darkMode ? (
-                  <Sun className="w-5 h-5" />
-                ) : (
-                  <Moon className="w-5 h-5" />
-                )}
+                {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
             </div>
           </div>
 
           {/* Budget Alerts */}
           {categoryAlerts.length > 0 && (
-            <div
-              className={`mt-4 p-3 rounded-lg ${
-                darkMode
-                  ? "bg-yellow-900/30 border-yellow-700"
-                  : "bg-yellow-50 border-yellow-200"
-              } border`}
-            >
+            <div className={`mt-4 p-3 rounded-lg ${darkMode ? "bg-yellow-900/30 border-yellow-700" : "bg-yellow-50 border-yellow-200"} border`}>
               <div className="flex items-center gap-2 text-yellow-600">
                 <Bell className="w-4 h-4 flex-shrink-0" />
                 <span className="text-sm font-medium">
@@ -436,6 +647,14 @@ const App: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Data Loading Indicator */}
+        {isDataLoading && (
+          <div className={`${bgCard} rounded-xl p-4 mb-6 shadow-lg flex items-center justify-center gap-3`}>
+            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            <span className={textSecondary}>Loading your data...</span>
+          </div>
+        )}
 
         {/* Desktop Navigation */}
         <div
@@ -726,6 +945,15 @@ const App: React.FC = () => {
                 darkMode={darkMode}
               />
             </div>
+
+            {/* Spending Insights */}
+            <SpendingInsights
+              transactions={transactions}
+              categoryBudgets={categoryBudgets}
+              budgetLimit={budgetLimit}
+              currencySymbol={currencySymbol}
+              darkMode={darkMode}
+            />
           </div>
         )}
 
@@ -755,13 +983,17 @@ const App: React.FC = () => {
         {activeTab === "settings" && (
           <SettingsSection
             budgetLimit={budgetLimit}
-            setBudgetLimit={setBudgetLimit}
+            setBudgetLimit={(limit) => updateBudgets(limit, categoryBudgets)}
             categoryBudgets={categoryBudgets}
-            setCategoryBudgets={setCategoryBudgets}
+            setCategoryBudgets={(budgets) => updateBudgets(budgetLimit, budgets)}
             darkMode={darkMode}
             onExportData={handleExportData}
             onClearData={handleClearData}
             onShowToast={showToast}
+            userSettings={userSettings}
+            onUpdateSettings={updateUserSettings}
+            expenseCategories={expenseCategories}
+            incomeCategories={incomeCategories}
           />
         )}
       </div>
@@ -797,6 +1029,9 @@ const App: React.FC = () => {
         }
         isEditing={!!editingTransaction}
         darkMode={darkMode}
+        userId={user?.uid}
+        expenseCategories={expenseCategories}
+        incomeCategories={incomeCategories}
       />
 
       {/* Goal Modal */}

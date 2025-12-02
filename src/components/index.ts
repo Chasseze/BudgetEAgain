@@ -8,6 +8,7 @@ export { default as TransactionList } from './TransactionList';
 export { default as TransactionModal } from './TransactionModal';
 export { default as GoalsSection } from './GoalsSection';
 export { default as SettingsSection } from './SettingsSection';
+export { default as SpendingInsights } from './SpendingInsights';
 export {
   ExpensesPieChart,
   IncomeExpenseBarChart,

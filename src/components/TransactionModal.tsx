@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Camera, Upload, RefreshCw } from 'lucide-react';
+import { X, Camera, Upload, RefreshCw, Loader2 } from 'lucide-react';
+import { storage } from '../config/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface TransactionFormData {
   type: 'income' | 'expense';
@@ -19,9 +21,12 @@ interface TransactionModalProps {
   initialData?: TransactionFormData;
   isEditing?: boolean;
   darkMode: boolean;
+  userId?: string;
+  expenseCategories?: string[];
+  incomeCategories?: string[];
 }
 
-const EXPENSE_CATEGORIES = [
+const DEFAULT_EXPENSE_CATEGORIES = [
   'Food & Dining',
   'Transportation',
   'Entertainment',
@@ -32,7 +37,7 @@ const EXPENSE_CATEGORIES = [
   'Other',
 ];
 
-const INCOME_CATEGORIES = ['Salary', 'Freelance', 'Investment', 'Other'];
+const DEFAULT_INCOME_CATEGORIES = ['Salary', 'Freelance', 'Investment', 'Other'];
 
 const TransactionModal: React.FC<TransactionModalProps> = ({
   isOpen,
@@ -41,6 +46,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   initialData,
   isEditing = false,
   darkMode,
+  userId,
+  expenseCategories = DEFAULT_EXPENSE_CATEGORIES,
+  incomeCategories = DEFAULT_INCOME_CATEGORIES,
 }) => {
   const defaultFormData: TransactionFormData = {
     type: 'expense',
@@ -55,22 +63,25 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const [formData, setFormData] = useState<TransactionFormData>(defaultFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
   // Reset form when modal opens/closes or initialData changes
   useEffect(() => {
     if (isOpen) {
       setFormData(initialData || defaultFormData);
       setErrors({});
+      setReceiptPreview(initialData?.receipt || null);
     }
   }, [isOpen, initialData]);
 
   // Update category when type changes
   useEffect(() => {
-    const categories = formData.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+    const categories = formData.type === 'expense' ? expenseCategories : incomeCategories;
     if (!categories.includes(formData.category)) {
       setFormData(prev => ({ ...prev, category: categories[0] }));
     }
-  }, [formData.type]);
+  }, [formData.type, expenseCategories, incomeCategories]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -92,26 +103,58 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Check file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        setErrors(prev => ({ ...prev, receipt: 'File size must be less than 5MB' }));
-        return;
-      }
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, receipt: reader.result as string }));
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors(prev => ({ ...prev, receipt: 'File size must be less than 5MB' }));
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      setErrors(prev => ({ ...prev, receipt: 'Please upload an image file' }));
+      return;
+    }
+
+    // Create preview immediately
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setReceiptPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to Firebase Storage if userId is available and storage is configured
+    if (userId && storage) {
+      setIsUploadingReceipt(true);
+      try {
+        const timestamp = Date.now();
+        const fileName = `receipts/${userId}/${timestamp}_${file.name}`;
+        const storageRef = ref(storage, fileName);
+        
+        await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(storageRef);
+        
+        setFormData(prev => ({ ...prev, receipt: downloadURL }));
         setErrors(prev => ({ ...prev, receipt: '' }));
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        console.error('Error uploading receipt:', error);
+        setErrors(prev => ({ ...prev, receipt: 'Failed to upload receipt. Please try again.' }));
+        setReceiptPreview(null);
+      } finally {
+        setIsUploadingReceipt(false);
+      }
+    } else {
+      // Fallback to base64 if no userId (shouldn't happen in production)
+      setFormData(prev => ({ ...prev, receipt: reader.result as string }));
     }
   };
 
   const removeReceipt = () => {
     setFormData(prev => ({ ...prev, receipt: null }));
+    setReceiptPreview(null);
   };
 
   const validateForm = (): boolean => {
@@ -143,7 +186,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   if (!isOpen) return null;
 
-  const categories = formData.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const categories = formData.type === 'expense' ? expenseCategories : incomeCategories;
 
   // Styling classes
   const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
@@ -344,17 +387,26 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           {/* Receipt Upload */}
           <div>
             <label className={labelClass}>Receipt (Optional)</label>
-            {formData.receipt ? (
+            {receiptPreview || formData.receipt ? (
               <div className="relative">
+                {isUploadingReceipt && (
+                  <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center z-10">
+                    <div className="flex items-center gap-2 text-white">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Uploading...</span>
+                    </div>
+                  </div>
+                )}
                 <img
-                  src={formData.receipt}
+                  src={receiptPreview || formData.receipt || ''}
                   alt="Receipt preview"
                   className="w-full h-40 object-cover rounded-xl"
                 />
                 <button
                   type="button"
                   onClick={removeReceipt}
-                  className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                  disabled={isUploadingReceipt}
+                  className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg disabled:opacity-50"
                   aria-label="Remove receipt"
                 >
                   <X className="w-4 h-4" />

@@ -17,13 +17,12 @@ import { getStorage } from 'firebase/storage';
 // Your web app's Firebase configuration
 // IMPORTANT: Replace these values with your actual Firebase project credentials
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY_HERE",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  measurementId: "YOUR_MEASUREMENT_ID" // Optional - for Google Analytics
+  apiKey: "AIzaSyClXQJGhOfvJmbvGve_CdGIYuDrgjlpjf4",
+  authDomain: "budget-expense-app-c8262.firebaseapp.com",
+  projectId: "budget-expense-app-c8262",
+  storageBucket: "budget-expense-app-c8262.firebasestorage.app",
+  messagingSenderId: "281688261944",
+  appId: "1:281688261944:web:b02d31529d1fc84bfeadcd"
 };
 
 // Validate configuration before initializing

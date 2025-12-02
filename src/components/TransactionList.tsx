@@ -3,7 +3,7 @@ import { Trash2, Edit2, Eye, RefreshCw } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 
 interface Transaction {
-  id: number;
+  id: string;
   type: 'income' | 'expense';
   amount: number;
   category: string;
@@ -16,7 +16,7 @@ interface Transaction {
 interface TransactionListProps {
   transactions: Transaction[];
   onEdit: (transaction: Transaction) => void;
-  onDelete: (id: number) => void;
+  onDelete: (id: string) => void;
   onViewReceipt: (receipt: string) => void;
   darkMode: boolean;
   searchQuery?: string;

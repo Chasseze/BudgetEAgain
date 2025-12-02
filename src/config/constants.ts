@@ -7,6 +7,29 @@ export const STORAGE_KEYS = {
   DARK_MODE: 'budget_tracker_dark_mode',
 };
 
+// Supported currencies
+export const CURRENCIES = [
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'British Pound' },
+  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
+  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'CHF', symbol: 'Fr', name: 'Swiss Franc' },
+  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
+  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+  { code: 'MXN', symbol: '$', name: 'Mexican Peso' },
+  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
+  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
+  { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham' },
+];
+
+// Default currency
+export const DEFAULT_CURRENCY = 'USD';
+
 // Category colors for charts
 export const COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
@@ -51,7 +74,7 @@ export const CATEGORY_CONFIG: Record<string, { color: string; budget: number }> 
 // Sample transactions for initial state
 export const SAMPLE_TRANSACTIONS = [
   {
-    id: 1,
+    id: "1",
     type: 'expense' as const,
     amount: 45.50,
     category: 'Food & Dining',
@@ -61,7 +84,7 @@ export const SAMPLE_TRANSACTIONS = [
     isRecurring: false,
   },
   {
-    id: 2,
+    id: "2",
     type: 'expense' as const,
     amount: 120.00,
     category: 'Bills & Utilities',
@@ -71,7 +94,7 @@ export const SAMPLE_TRANSACTIONS = [
     isRecurring: true,
   },
   {
-    id: 3,
+    id: "3",
     type: 'income' as const,
     amount: 3000.00,
     category: 'Salary',
@@ -81,7 +104,7 @@ export const SAMPLE_TRANSACTIONS = [
     isRecurring: true,
   },
   {
-    id: 4,
+    id: "4",
     type: 'expense' as const,
     amount: 60.00,
     category: 'Transportation',
@@ -91,7 +114,7 @@ export const SAMPLE_TRANSACTIONS = [
     isRecurring: false,
   },
   {
-    id: 5,
+    id: "5",
     type: 'expense' as const,
     amount: 85.00,
     category: 'Entertainment',
@@ -101,7 +124,7 @@ export const SAMPLE_TRANSACTIONS = [
     isRecurring: false,
   },
   {
-    id: 6,
+    id: "6",
     type: 'expense' as const,
     amount: 200.00,
     category: 'Shopping',
@@ -111,7 +134,7 @@ export const SAMPLE_TRANSACTIONS = [
     isRecurring: false,
   },
   {
-    id: 7,
+    id: "7",
     type: 'income' as const,
     amount: 500.00,
     category: 'Freelance',
@@ -125,7 +148,7 @@ export const SAMPLE_TRANSACTIONS = [
 // Sample savings goals
 export const SAMPLE_GOALS = [
   {
-    id: 1,
+    id: "1",
     name: 'Vacation Fund',
     targetAmount: 2000,
     currentAmount: 850,
@@ -133,7 +156,7 @@ export const SAMPLE_GOALS = [
     color: '#4ECDC4',
   },
   {
-    id: 2,
+    id: "2",
     name: 'Emergency Fund',
     targetAmount: 5000,
     currentAmount: 2500,

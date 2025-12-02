@@ -1,5 +1,26 @@
-import React, { useState } from 'react';
-import { DollarSign, Save, RotateCcw, Download, Trash2, Bell, Palette } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { 
+  DollarSign, 
+  Save, 
+  RotateCcw, 
+  Download, 
+  Trash2, 
+  Bell, 
+  Palette,
+  Globe,
+  Plus,
+  X,
+  Mail
+} from 'lucide-react';
+import { CURRENCIES, DEFAULT_CURRENCY, COLORS } from '../config/constants';
+
+interface UserSettings {
+  currency: string;
+  emailReports: boolean;
+  reportEmail: string;
+  customExpenseCategories: { name: string; color: string; budget?: number }[];
+  customIncomeCategories: { name: string; color: string }[];
+}
 
 interface SettingsSectionProps {
   budgetLimit: number;
@@ -10,9 +31,13 @@ interface SettingsSectionProps {
   onExportData: () => void;
   onClearData: () => void;
   onShowToast: (message: string) => void;
+  userSettings: UserSettings;
+  onUpdateSettings: (settings: Partial<UserSettings>) => void;
+  expenseCategories: string[];
+  incomeCategories: string[];
 }
 
-const EXPENSE_CATEGORIES = [
+const DEFAULT_EXPENSE_CATEGORIES = [
   'Food & Dining',
   'Transportation',
   'Entertainment',
@@ -20,6 +45,13 @@ const EXPENSE_CATEGORIES = [
   'Shopping',
   'Healthcare',
   'Education',
+  'Other',
+];
+
+const DEFAULT_INCOME_CATEGORIES = [
+  'Salary',
+  'Freelance',
+  'Investment',
   'Other',
 ];
 
@@ -32,23 +64,60 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   onExportData,
   onClearData,
   onShowToast,
+  userSettings,
+  onUpdateSettings,
+  expenseCategories,
+  incomeCategories,
 }) => {
   const [localBudgetLimit, setLocalBudgetLimit] = useState(budgetLimit.toString());
   const [localCategoryBudgets, setLocalCategoryBudgets] = useState<Record<string, string>>(
     Object.fromEntries(
-      EXPENSE_CATEGORIES.map((cat) => [cat, (categoryBudgets[cat] || 0).toString()])
+      expenseCategories.map((cat) => [cat, (categoryBudgets[cat] || 0).toString()])
     )
   );
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  
+  // Currency state
+  const [selectedCurrency, setSelectedCurrency] = useState(userSettings.currency || DEFAULT_CURRENCY);
+  
+  // Email reports state
+  const [emailReports, setEmailReports] = useState(userSettings.emailReports || false);
+  const [reportEmail, setReportEmail] = useState(userSettings.reportEmail || '');
+  
+  // Custom categories state
+  const [showAddExpenseCategory, setShowAddExpenseCategory] = useState(false);
+  const [showAddIncomeCategory, setShowAddIncomeCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState(COLORS[0]);
+  const [newCategoryBudget, setNewCategoryBudget] = useState('');
+
+  // Update local state when props change
+  useEffect(() => {
+    setLocalCategoryBudgets(
+      Object.fromEntries(
+        expenseCategories.map((cat) => [cat, (categoryBudgets[cat] || 0).toString()])
+      )
+    );
+  }, [expenseCategories, categoryBudgets]);
+
+  useEffect(() => {
+    setSelectedCurrency(userSettings.currency || DEFAULT_CURRENCY);
+    setEmailReports(userSettings.emailReports || false);
+    setReportEmail(userSettings.reportEmail || '');
+  }, [userSettings]);
 
   // Styling classes
   const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
   const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
-  const borderColor = darkMode ? 'border-gray-700' : 'border-gray-200';
   const inputBg = darkMode
     ? 'bg-gray-700 border-gray-600 text-white'
     : 'bg-white border-gray-300 text-gray-900';
+
+  const getCurrencySymbol = () => {
+    const currency = CURRENCIES.find(c => c.code === selectedCurrency);
+    return currency?.symbol || '$';
+  };
 
   const handleSaveBudgetLimit = () => {
     const value = parseFloat(localBudgetLimit);
@@ -64,7 +133,7 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
     const newBudgets: Record<string, number> = {};
     let isValid = true;
 
-    EXPENSE_CATEGORIES.forEach((cat) => {
+    expenseCategories.forEach((cat) => {
       const value = parseFloat(localCategoryBudgets[cat] || '0');
       if (isNaN(value) || value < 0) {
         isValid = false;
@@ -101,8 +170,107 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
     onShowToast('All data has been cleared');
   };
 
+  const handleCurrencyChange = (code: string) => {
+    setSelectedCurrency(code);
+    onUpdateSettings({ currency: code });
+    onShowToast(`Currency changed to ${code}`);
+  };
+
+  const handleSaveEmailSettings = () => {
+    onUpdateSettings({ 
+      emailReports, 
+      reportEmail 
+    });
+    onShowToast('Email settings saved!');
+  };
+
+  const handleAddCategory = (type: 'expense' | 'income') => {
+    if (!newCategoryName.trim()) {
+      onShowToast('Please enter a category name');
+      return;
+    }
+
+    const existingCategories = type === 'expense' ? expenseCategories : incomeCategories;
+    if (existingCategories.includes(newCategoryName.trim())) {
+      onShowToast('Category already exists');
+      return;
+    }
+
+    const newCategory = {
+      name: newCategoryName.trim(),
+      color: newCategoryColor,
+      budget: type === 'expense' ? parseFloat(newCategoryBudget) || 0 : undefined,
+    };
+
+    if (type === 'expense') {
+      const updated = [...(userSettings.customExpenseCategories || []), newCategory];
+      onUpdateSettings({ customExpenseCategories: updated });
+    } else {
+      const updated = [...(userSettings.customIncomeCategories || []), { name: newCategory.name, color: newCategory.color }];
+      onUpdateSettings({ customIncomeCategories: updated });
+    }
+
+    setNewCategoryName('');
+    setNewCategoryColor(COLORS[0]);
+    setNewCategoryBudget('');
+    setShowAddExpenseCategory(false);
+    setShowAddIncomeCategory(false);
+    onShowToast(`${type === 'expense' ? 'Expense' : 'Income'} category added!`);
+  };
+
+  const handleDeleteCategory = (type: 'expense' | 'income', categoryName: string) => {
+    if (type === 'expense') {
+      const updated = (userSettings.customExpenseCategories || []).filter(c => c.name !== categoryName);
+      onUpdateSettings({ customExpenseCategories: updated });
+    } else {
+      const updated = (userSettings.customIncomeCategories || []).filter(c => c.name !== categoryName);
+      onUpdateSettings({ customIncomeCategories: updated });
+    }
+    onShowToast('Category deleted');
+  };
+
+  const isDefaultCategory = (categoryName: string, type: 'expense' | 'income') => {
+    const defaults = type === 'expense' ? DEFAULT_EXPENSE_CATEGORIES : DEFAULT_INCOME_CATEGORIES;
+    return defaults.includes(categoryName);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Currency Selection */}
+      <div className={`${bgCard} rounded-2xl shadow-lg p-6 transition-colors duration-300`}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`p-2 rounded-lg ${darkMode ? 'bg-green-900/50' : 'bg-green-100'}`}>
+            <Globe className={`w-5 h-5 ${darkMode ? 'text-green-400' : 'text-green-600'}`} />
+          </div>
+          <div>
+            <h3 className={`text-lg font-semibold ${textPrimary}`}>Currency</h3>
+            <p className={`text-sm ${textSecondary}`}>Select your preferred currency</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {CURRENCIES.map((currency) => (
+            <button
+              key={currency.code}
+              onClick={() => handleCurrencyChange(currency.code)}
+              className={`p-3 rounded-xl border-2 transition-all text-left ${
+                selectedCurrency === currency.code
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                  : `border-transparent ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`text-lg font-bold ${selectedCurrency === currency.code ? 'text-indigo-600' : textPrimary}`}>
+                  {currency.symbol}
+                </span>
+                <span className={`text-sm ${textSecondary}`}>{currency.code}</span>
+              </div>
+              <p className={`text-xs ${textSecondary} mt-1 truncate`}>{currency.name}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Monthly Budget Limit */}
       <div className={`${bgCard} rounded-2xl shadow-lg p-6 transition-colors duration-300`}>
         <div className="flex items-center gap-3 mb-4">
@@ -117,7 +285,7 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
 
         <div className="flex gap-3">
           <div className="relative flex-1">
-            <span className={`absolute left-4 top-1/2 -translate-y-1/2 ${textSecondary}`}>$</span>
+            <span className={`absolute left-4 top-1/2 -translate-y-1/2 ${textSecondary}`}>{getCurrencySymbol()}</span>
             <input
               type="number"
               value={localBudgetLimit}
@@ -162,14 +330,14 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          {EXPENSE_CATEGORIES.map((category) => (
+          {expenseCategories.map((category) => (
             <div key={category}>
               <label className={`block text-sm font-medium mb-1 ${textSecondary}`}>
                 {category}
               </label>
               <div className="relative">
                 <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${textSecondary}`}>
-                  $
+                  {getCurrencySymbol()}
                 </span>
                 <input
                   type="number"
@@ -197,6 +365,230 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
           <Save className="w-4 h-4" />
           Save Category Budgets
         </button>
+      </div>
+
+      {/* Custom Categories */}
+      <div className={`${bgCard} rounded-2xl shadow-lg p-6 transition-colors duration-300`}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`p-2 rounded-lg ${darkMode ? 'bg-orange-900/50' : 'bg-orange-100'}`}>
+            <Plus className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
+          </div>
+          <div>
+            <h3 className={`text-lg font-semibold ${textPrimary}`}>Custom Categories</h3>
+            <p className={`text-sm ${textSecondary}`}>Add your own expense and income categories</p>
+          </div>
+        </div>
+
+        {/* Expense Categories */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className={`font-medium ${textPrimary}`}>Expense Categories</h4>
+            <button
+              onClick={() => setShowAddExpenseCategory(!showAddExpenseCategory)}
+              className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add New
+            </button>
+          </div>
+
+          {showAddExpenseCategory && (
+            <div className={`p-4 rounded-xl mb-3 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                <input
+                  type="text"
+                  placeholder="Category name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className={`px-3 py-2 rounded-lg border ${inputBg}`}
+                />
+                <input
+                  type="number"
+                  placeholder="Budget (optional)"
+                  value={newCategoryBudget}
+                  onChange={(e) => setNewCategoryBudget(e.target.value)}
+                  className={`px-3 py-2 rounded-lg border ${inputBg}`}
+                />
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm ${textSecondary}`}>Color:</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {COLORS.slice(0, 8).map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setNewCategoryColor(color)}
+                        className={`w-6 h-6 rounded-full transition-transform ${newCategoryColor === color ? 'scale-125 ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleAddCategory('expense')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+                >
+                  Add Category
+                </button>
+                <button
+                  onClick={() => setShowAddExpenseCategory(false)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-700'}`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {expenseCategories.map((cat) => (
+              <div
+                key={cat}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}
+              >
+                <span className={`text-sm ${textPrimary}`}>{cat}</span>
+                {!isDefaultCategory(cat, 'expense') && (
+                  <button
+                    onClick={() => handleDeleteCategory('expense', cat)}
+                    className="text-red-500 hover:text-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Income Categories */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className={`font-medium ${textPrimary}`}>Income Categories</h4>
+            <button
+              onClick={() => setShowAddIncomeCategory(!showAddIncomeCategory)}
+              className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add New
+            </button>
+          </div>
+
+          {showAddIncomeCategory && (
+            <div className={`p-4 rounded-xl mb-3 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <input
+                  type="text"
+                  placeholder="Category name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className={`px-3 py-2 rounded-lg border ${inputBg}`}
+                />
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm ${textSecondary}`}>Color:</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {COLORS.slice(0, 8).map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setNewCategoryColor(color)}
+                        className={`w-6 h-6 rounded-full transition-transform ${newCategoryColor === color ? 'scale-125 ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleAddCategory('income')}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                >
+                  Add Category
+                </button>
+                <button
+                  onClick={() => setShowAddIncomeCategory(false)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-700'}`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {incomeCategories.map((cat) => (
+              <div
+                key={cat}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}
+              >
+                <span className={`text-sm ${textPrimary}`}>{cat}</span>
+                {!isDefaultCategory(cat, 'income') && (
+                  <button
+                    onClick={() => handleDeleteCategory('income', cat)}
+                    className="text-red-500 hover:text-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly Email Reports */}
+      <div className={`${bgCard} rounded-2xl shadow-lg p-6 transition-colors duration-300`}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`p-2 rounded-lg ${darkMode ? 'bg-blue-900/50' : 'bg-blue-100'}`}>
+            <Mail className={`w-5 h-5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+          </div>
+          <div>
+            <h3 className={`text-lg font-semibold ${textPrimary}`}>Monthly Reports</h3>
+            <p className={`text-sm ${textSecondary}`}>Receive spending summaries via email</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className={`p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className={`font-medium ${textPrimary}`}>Enable Monthly Reports</p>
+                <p className={`text-sm ${textSecondary}`}>Get a summary on the 1st of each month</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={emailReports}
+                  onChange={(e) => setEmailReports(e.target.checked)}
+                  className="sr-only peer" 
+                />
+                <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {emailReports && (
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${textSecondary}`}>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={reportEmail}
+                  onChange={(e) => setReportEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  className={`w-full px-4 py-2 rounded-lg border ${inputBg}`}
+                />
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleSaveEmailSettings}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center justify-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            Save Email Settings
+          </button>
+        </div>
       </div>
 
       {/* Notifications */}
@@ -284,8 +676,8 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
 
       {/* App Info */}
       <div className={`text-center py-4 ${textSecondary}`}>
-        <p className="text-sm">Budget Tracker v1.0.0</p>
-        <p className="text-xs mt-1">Built with React & Tailwind CSS</p>
+        <p className="text-sm">Budget Tracker v2.0.0</p>
+        <p className="text-xs mt-1">Built with React, Firebase & Tailwind CSS</p>
       </div>
     </div>
   );
