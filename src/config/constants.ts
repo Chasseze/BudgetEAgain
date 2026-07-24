@@ -56,20 +56,9 @@ export const INCOME_CATEGORIES = [
   'Other'
 ];
 
-// Category configuration with colors and default budgets
-export const CATEGORY_CONFIG: Record<string, { color: string; budget: number }> = {
-  'Food & Dining': { color: '#FF6B6B', budget: 500 },
-  'Transportation': { color: '#4ECDC4', budget: 300 },
-  'Entertainment': { color: '#45B7D1', budget: 200 },
-  'Bills & Utilities': { color: '#FFA07A', budget: 400 },
-  'Shopping': { color: '#98D8C8', budget: 300 },
-  'Healthcare': { color: '#F7DC6F', budget: 200 },
-  'Education': { color: '#BB8FCE', budget: 150 },
-  'Other': { color: '#85C1E2', budget: 100 },
-  'Salary': { color: '#4ade80', budget: 0 },
-  'Freelance': { color: '#34d399', budget: 0 },
-  'Investment': { color: '#22c55e', budget: 0 },
-};
+// Category configuration — single source of truth is categories.tsx (which includes icons).
+// Re-exported here for backwards compatibility so existing imports from constants.ts keep working.
+export { CATEGORY_CONFIG } from './categories';
 
 // Sample transactions for initial state
 export const SAMPLE_TRANSACTIONS = [
@@ -166,7 +155,7 @@ export const SAMPLE_GOALS = [
 ];
 
 // Default budget limit
-export const DEFAULT_BUDGET_LIMIT = 2500;
+export const DEFAULT_BUDGET_LIMIT = 1000;
 
 // Date range filter options
 export const DATE_RANGE_OPTIONS = [

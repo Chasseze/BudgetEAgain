@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 
@@ -35,6 +36,8 @@ const root = ReactDOM.createRoot(rootElement);
 // Render the app
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

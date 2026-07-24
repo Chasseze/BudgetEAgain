@@ -1,6 +1,13 @@
-import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, Calendar } from 'lucide-react';
-import ProgressRing from './ProgressRing';
+import React, { useState } from "react";
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Calendar,
+  Target,
+  PartyPopper,
+} from "lucide-react";
+import ProgressRing from "./ProgressRing";
 
 interface SavingsGoal {
   id: string;
@@ -18,6 +25,7 @@ interface GoalsSectionProps {
   onDeleteGoal: (id: string) => void;
   onUpdateProgress: (id: string, amount: number) => void;
   darkMode: boolean;
+  currencySymbol?: string;
 }
 
 const QUICK_ADD_AMOUNTS = [10, 25, 50, 100];
@@ -29,12 +37,13 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
   onDeleteGoal,
   onUpdateProgress,
   darkMode,
+  currencySymbol = "$",
 }) => {
   const [expandedGoal, setExpandedGoal] = useState<string | null>(null);
   const [customAmount, setCustomAmount] = useState<Record<string, string>>({});
 
   const formatCurrency = (amount: number): string => {
-    return amount.toLocaleString('en-US', {
+    return amount.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -42,10 +51,10 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
 
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
   };
 
@@ -57,11 +66,11 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
   };
 
   const getProgressColor = (percentage: number): string => {
-    if (percentage >= 100) return '#22c55e'; // green
-    if (percentage >= 75) return '#4ade80'; // light green
-    if (percentage >= 50) return '#fbbf24'; // yellow
-    if (percentage >= 25) return '#fb923c'; // orange
-    return '#ef4444'; // red
+    if (percentage >= 100) return "#22c55e"; // green
+    if (percentage >= 75) return "#4ade80"; // light green
+    if (percentage >= 50) return "#fbbf24"; // yellow
+    if (percentage >= 25) return "#fb923c"; // orange
+    return "#ef4444"; // red
   };
 
   const handleQuickAdd = (goalId: string, amount: number) => {
@@ -69,30 +78,35 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
   };
 
   const handleCustomAdd = (goalId: string) => {
-    const amount = parseFloat(customAmount[goalId] || '0');
+    const amount = parseFloat(customAmount[goalId] || "0");
     if (amount > 0) {
       onUpdateProgress(goalId, amount);
-      setCustomAmount((prev) => ({ ...prev, [goalId]: '' }));
+      setCustomAmount((prev) => ({ ...prev, [goalId]: "" }));
     }
   };
 
-  const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
-  const borderColor = darkMode ? 'border-gray-700' : 'border-gray-200';
+  const bgCard = darkMode ? "bg-gray-800" : "bg-white";
+  const textPrimary = darkMode ? "text-white" : "text-gray-900";
+  const textSecondary = darkMode ? "text-gray-400" : "text-gray-600";
+  const borderColor = darkMode ? "border-gray-700" : "border-gray-200";
   const inputBg = darkMode
-    ? 'bg-gray-700 border-gray-600 text-white'
-    : 'bg-white border-gray-300 text-gray-900';
+    ? "bg-gray-700 border-gray-600 text-white"
+    : "bg-white border-gray-300 text-gray-900";
 
   if (goals.length === 0) {
     return (
       <div className={`${bgCard} rounded-2xl shadow-xl p-8 text-center`}>
-        <div className="text-6xl mb-4">🎯</div>
+        <div
+          className={`inline-flex p-5 rounded-full mb-4 ${darkMode ? "bg-gray-700/50" : "bg-gray-100"}`}
+        >
+          <Target className="w-12 h-12 opacity-50" />
+        </div>
         <h3 className={`text-xl font-bold ${textPrimary} mb-2`}>
           No savings goals yet
         </h3>
         <p className={`${textSecondary} mb-6`}>
-          Start setting goals to track your progress towards financial milestones
+          Start setting goals to track your progress towards financial
+          milestones
         </p>
         <button
           onClick={onAddGoal}
@@ -138,7 +152,7 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
             <div
               key={goal.id}
               className={`${bgCard} rounded-2xl shadow-lg overflow-hidden transition-all duration-300 ${
-                isCompleted ? 'ring-2 ring-green-500' : ''
+                isCompleted ? "ring-2 ring-green-500" : ""
               }`}
             >
               {/* Goal Header */}
@@ -156,9 +170,7 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                       color={goal.color || getProgressColor(percentage)}
                       darkMode={darkMode}
                     >
-                      <span
-                        className={`text-xs font-bold ${textPrimary}`}
-                      >
+                      <span className={`text-xs font-bold ${textPrimary}`}>
                         {Math.min(percentage, 100).toFixed(0)}%
                       </span>
                     </ProgressRing>
@@ -179,11 +191,16 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
 
                     <div className="flex items-center gap-2 text-sm mb-2">
                       <span className={textSecondary}>
-                        ${formatCurrency(goal.currentAmount)}
+                        {currencySymbol}
+                        {formatCurrency(goal.currentAmount)}
                       </span>
                       <span className={textSecondary}>/</span>
-                      <span className={textPrimary} style={{ color: goal.color }}>
-                        ${formatCurrency(goal.targetAmount)}
+                      <span
+                        className={textPrimary}
+                        style={{ color: goal.color }}
+                      >
+                        {currencySymbol}
+                        {formatCurrency(goal.targetAmount)}
                       </span>
                     </div>
 
@@ -191,10 +208,10 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                       <span
                         className={`flex items-center gap-1 ${
                           daysRemaining < 0
-                            ? 'text-red-500'
+                            ? "text-red-500"
                             : daysRemaining < 30
-                            ? 'text-yellow-500'
-                            : textSecondary
+                              ? "text-yellow-500"
+                              : textSecondary
                         }`}
                       >
                         <Calendar className="w-3 h-3" />
@@ -217,8 +234,8 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                       }}
                       className={`p-2 rounded-lg transition-colors ${
                         darkMode
-                          ? 'hover:bg-gray-700 text-gray-400'
-                          : 'hover:bg-gray-100 text-gray-500'
+                          ? "hover:bg-gray-700 text-gray-400"
+                          : "hover:bg-gray-100 text-gray-500"
                       }`}
                       title="Edit goal"
                     >
@@ -231,8 +248,8 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                       }}
                       className={`p-2 rounded-lg transition-colors ${
                         darkMode
-                          ? 'hover:bg-red-900/50 text-gray-400 hover:text-red-400'
-                          : 'hover:bg-red-50 text-gray-500 hover:text-red-500'
+                          ? "hover:bg-red-900/50 text-gray-400 hover:text-red-400"
+                          : "hover:bg-red-50 text-gray-500 hover:text-red-500"
                       }`}
                       title="Delete goal"
                     >
@@ -244,14 +261,15 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                 {/* Progress Bar */}
                 <div
                   className={`mt-3 h-2 rounded-full overflow-hidden ${
-                    darkMode ? 'bg-gray-700' : 'bg-gray-200'
+                    darkMode ? "bg-gray-700" : "bg-gray-200"
                   }`}
                 >
                   <div
                     className="h-full rounded-full transition-all duration-500 ease-out"
                     style={{
                       width: `${Math.min(percentage, 100)}%`,
-                      backgroundColor: goal.color || getProgressColor(percentage),
+                      backgroundColor:
+                        goal.color || getProgressColor(percentage),
                     }}
                   />
                 </div>
@@ -274,11 +292,12 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                         onClick={() => handleQuickAdd(goal.id, amount)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                           darkMode
-                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                            ? "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                            : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                         }`}
                       >
-                        +${amount}
+                        +{currencySymbol}
+                        {amount}
                       </button>
                     ))}
                   </div>
@@ -289,11 +308,11 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                       <span
                         className={`absolute left-3 top-1/2 -translate-y-1/2 ${textSecondary}`}
                       >
-                        $
+                        {currencySymbol}
                       </span>
                       <input
                         type="number"
-                        value={customAmount[goal.id] || ''}
+                        value={customAmount[goal.id] || ""}
                         onChange={(e) =>
                           setCustomAmount((prev) => ({
                             ...prev,
@@ -308,7 +327,10 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                     </div>
                     <button
                       onClick={() => handleCustomAdd(goal.id)}
-                      disabled={!customAmount[goal.id] || parseFloat(customAmount[goal.id]) <= 0}
+                      disabled={
+                        !customAmount[goal.id] ||
+                        parseFloat(customAmount[goal.id]) <= 0
+                      }
                       className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Add
@@ -320,8 +342,8 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                     onClick={() => handleQuickAdd(goal.id, -10)}
                     className={`mt-3 text-sm ${
                       darkMode
-                        ? 'text-gray-500 hover:text-gray-400'
-                        : 'text-gray-400 hover:text-gray-600'
+                        ? "text-gray-500 hover:text-gray-400"
+                        : "text-gray-400 hover:text-gray-600"
                     } transition-colors`}
                   >
                     Withdraw $10 from goal
@@ -334,7 +356,9 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
                 <div
                   className={`px-4 pb-4 pt-2 border-t ${borderColor} text-center`}
                 >
-                  <div className="text-4xl mb-2">🎉</div>
+                  <div className="inline-flex p-3 rounded-full bg-green-100 dark:bg-green-900/30 mb-2">
+                    <PartyPopper className="w-8 h-8 text-green-600 dark:text-green-400" />
+                  </div>
                   <p className={`font-medium ${textPrimary}`}>
                     Congratulations! You've reached your goal!
                   </p>
@@ -360,13 +384,19 @@ const GoalsSection: React.FC<GoalsSectionProps> = ({
           <div>
             <p className={`text-sm ${textSecondary}`}>Total Saved</p>
             <p className="text-xl font-bold text-green-500">
-              ${formatCurrency(goals.reduce((sum, g) => sum + g.currentAmount, 0))}
+              $
+              {formatCurrency(
+                goals.reduce((sum, g) => sum + g.currentAmount, 0),
+              )}
             </p>
           </div>
           <div>
             <p className={`text-sm ${textSecondary}`}>Total Target</p>
             <p className={`text-xl font-bold ${textPrimary}`}>
-              ${formatCurrency(goals.reduce((sum, g) => sum + g.targetAmount, 0))}
+              $
+              {formatCurrency(
+                goals.reduce((sum, g) => sum + g.targetAmount, 0),
+              )}
             </p>
           </div>
           <div>

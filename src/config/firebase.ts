@@ -14,29 +14,27 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
-// Your web app's Firebase configuration
-// IMPORTANT: Replace these values with your actual Firebase project credentials
+// Your web app's Firebase configuration — loaded from .env (see .env.example)
 const firebaseConfig = {
-  apiKey: "AIzaSyClXQJGhOfvJmbvGve_CdGIYuDrgjlpjf4",
-  authDomain: "budget-expense-app-c8262.firebaseapp.com",
-  projectId: "budget-expense-app-c8262",
-  storageBucket: "budget-expense-app-c8262.firebasestorage.app",
-  messagingSenderId: "281688261944",
-  appId: "1:281688261944:web:b02d31529d1fc84bfeadcd"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 // Validate configuration before initializing
 const validateConfig = () => {
   const requiredFields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
   const missingFields = requiredFields.filter(
-    field => !firebaseConfig[field as keyof typeof firebaseConfig] ||
-    firebaseConfig[field as keyof typeof firebaseConfig]?.includes('YOUR_')
+    field => !firebaseConfig[field as keyof typeof firebaseConfig]
   );
 
   if (missingFields.length > 0) {
     console.warn(
-      `⚠️ Firebase configuration incomplete. Please update src/config/firebase.ts with your Firebase credentials.\n` +
-      `Missing or placeholder fields: ${missingFields.join(', ')}\n` +
+      `⚠️ Firebase configuration incomplete. Please copy .env.example to .env and fill in your Firebase credentials.\n` +
+      `Missing fields: ${missingFields.join(', ')}\n` +
       `The app will work offline with localStorage, but cloud features will be disabled.`
     );
     return false;

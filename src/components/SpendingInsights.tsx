@@ -174,8 +174,9 @@ const SpendingInsights: React.FC<SpendingInsightsProps> = ({
     }
   }
 
-  // 5. Savings tips based on patterns
-  if (currentByCategory['Food & Dining'] > 500) {
+  // 5. Savings tips based on patterns — thresholds relative to configured category budgets
+  const foodBudget = categoryBudgets['Food & Dining'] || 500;
+  if (currentByCategory['Food & Dining'] > foodBudget * 0.85) {
     insights.push({
       type: 'tip',
       icon: <Zap className="w-5 h-5" />,
@@ -184,7 +185,8 @@ const SpendingInsights: React.FC<SpendingInsightsProps> = ({
     });
   }
 
-  if (currentByCategory['Entertainment'] > 200) {
+  const entBudget = categoryBudgets['Entertainment'] || 200;
+  if (currentByCategory['Entertainment'] > entBudget * 0.85) {
     insights.push({
       type: 'tip',
       icon: <Zap className="w-5 h-5" />,

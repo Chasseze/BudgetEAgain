@@ -7,6 +7,7 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  type User,
 } from "firebase/auth";
 import { app } from "../config/firebase";
 import { Mail, Lock, Eye, EyeOff, Wallet, TrendingUp, PiggyBank, ArrowRight } from "lucide-react";
@@ -18,7 +19,7 @@ provider.setCustomParameters({
 });
 
 interface AuthProps {
-  onAuth: (user: any) => void;
+  onAuth: (user: User) => void;
   compact?: boolean;
 }
 

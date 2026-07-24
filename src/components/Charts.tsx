@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   PieChart,
   Pie,
@@ -13,7 +13,8 @@ import {
   Bar,
   AreaChart,
   Area,
-} from 'recharts';
+} from "recharts";
+import { PieChart as PieChartIcon, BarChart3, TrendingUp } from "lucide-react";
 
 // Types
 interface CategoryExpense {
@@ -55,18 +56,19 @@ interface AreaChartProps {
 interface CategoryBudgetChartProps {
   data: CategoryExpense[];
   darkMode: boolean;
+  currencySymbol?: string;
 }
 
 // Chart colors
 const CHART_COLORS = [
-  '#FF6B6B',
-  '#4ECDC4',
-  '#45B7D1',
-  '#FFA07A',
-  '#98D8C8',
-  '#F7DC6F',
-  '#BB8FCE',
-  '#85C1E2',
+  "#FF6B6B",
+  "#4ECDC4",
+  "#45B7D1",
+  "#FFA07A",
+  "#98D8C8",
+  "#F7DC6F",
+  "#BB8FCE",
+  "#85C1E2",
 ];
 
 // Custom tooltip styling
@@ -80,13 +82,14 @@ const CustomTooltip: React.FC<{
     return (
       <div
         className={`px-4 py-3 rounded-lg shadow-lg ${
-          darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'
-        } border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}
+          darkMode ? "bg-gray-800 text-white" : "bg-white text-gray-800"
+        } border ${darkMode ? "border-gray-700" : "border-gray-200"}`}
       >
         {label && <p className="font-medium mb-1">{label}</p>}
         {payload.map((entry, index) => (
           <p key={index} className="text-sm" style={{ color: entry.color }}>
-            {entry.name}: ${entry.value?.toLocaleString('en-US', {
+            {entry.name}: $
+            {entry.value?.toLocaleString("en-US", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
@@ -99,17 +102,26 @@ const CustomTooltip: React.FC<{
 };
 
 // Pie Chart for Category Expenses
-export const ExpensesPieChart: React.FC<PieChartProps> = ({ data, darkMode }) => {
+export const ExpensesPieChart: React.FC<PieChartProps> = ({
+  data,
+  darkMode,
+}) => {
   if (data.length === 0) {
     return (
       <div
         className={`flex flex-col items-center justify-center h-64 ${
-          darkMode ? 'text-gray-400' : 'text-gray-500'
+          darkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
-        <div className="text-5xl mb-3">📊</div>
-        <p className="text-lg font-medium">No expense data</p>
-        <p className="text-sm">Start tracking to see your spending breakdown</p>
+        <div
+          className={`p-4 rounded-full mb-3 ${darkMode ? "bg-gray-700/50" : "bg-gray-100"}`}
+        >
+          <PieChartIcon className="w-10 h-10 opacity-50" />
+        </div>
+        <p className="text-lg font-medium">No expense data yet</p>
+        <p className="text-sm text-center px-4">
+          Add expense transactions to see your spending breakdown by category
+        </p>
       </div>
     );
   }
@@ -135,7 +147,7 @@ export const ExpensesPieChart: React.FC<PieChartProps> = ({ data, darkMode }) =>
         x={x}
         y={y}
         fill="white"
-        textAnchor={x > cx ? 'start' : 'end'}
+        textAnchor={x > cx ? "start" : "end"}
         dominantBaseline="central"
         className="text-xs font-medium"
       >
@@ -145,44 +157,46 @@ export const ExpensesPieChart: React.FC<PieChartProps> = ({ data, darkMode }) =>
   };
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="50%"
-          labelLine={false}
-          label={renderCustomizedLabel}
-          outerRadius={100}
-          innerRadius={40}
-          fill="#8884d8"
-          dataKey="value"
-          animationBegin={0}
-          animationDuration={800}
-        >
-          {data.map((entry, index) => (
-            <Cell
-              key={`cell-${index}`}
-              fill={entry.color || CHART_COLORS[index % CHART_COLORS.length]}
-              stroke={darkMode ? '#1f2937' : '#fff'}
-              strokeWidth={2}
-            />
-          ))}
-        </Pie>
-        <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
-        <Legend
-          layout="horizontal"
-          verticalAlign="bottom"
-          align="center"
-          wrapperStyle={{ paddingTop: '20px' }}
-          formatter={(value) => (
-            <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
-              {value}
-            </span>
-          )}
-        />
-      </PieChart>
-    </ResponsiveContainer>
+    <div style={{ minHeight: 300, position: "relative" }}>
+      <ResponsiveContainer width="100%" height={300} debounce={50}>
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            labelLine={false}
+            label={renderCustomizedLabel}
+            outerRadius={100}
+            innerRadius={40}
+            fill="#8884d8"
+            dataKey="value"
+            animationBegin={200}
+            animationDuration={600}
+          >
+            {data.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.color || CHART_COLORS[index % CHART_COLORS.length]}
+                stroke={darkMode ? "#1f2937" : "#fff"}
+                strokeWidth={2}
+              />
+            ))}
+          </Pie>
+          <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
+          <Legend
+            layout="horizontal"
+            verticalAlign="bottom"
+            align="center"
+            wrapperStyle={{ paddingTop: "20px" }}
+            formatter={(value) => (
+              <span className={darkMode ? "text-gray-300" : "text-gray-600"}>
+                {value}
+              </span>
+            )}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
   );
 };
 
@@ -195,23 +209,45 @@ export const IncomeExpenseBarChart: React.FC<BarChartProps> = ({
     return (
       <div
         className={`flex flex-col items-center justify-center h-64 ${
-          darkMode ? 'text-gray-400' : 'text-gray-500'
+          darkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
-        <div className="text-5xl mb-3">📈</div>
+        <div
+          className={`p-4 rounded-full mb-3 ${darkMode ? "bg-gray-700/50" : "bg-gray-100"}`}
+        >
+          <BarChart3 className="w-10 h-10 opacity-50" />
+        </div>
         <p className="text-lg font-medium">No data available</p>
-        <p className="text-sm">Add transactions to see your monthly comparison</p>
+        <p className="text-sm">
+          Add transactions to see your monthly comparison
+        </p>
       </div>
     );
   }
 
-  // Format month labels
-  const formattedData = data.map((item) => ({
-    ...item,
-    monthLabel: new Date(item.month + '-01').toLocaleDateString('en-US', {
-      month: 'short',
-    }),
-  }));
+  // Format month labels - parse YYYY-MM without timezone issues
+  const formattedData = data.map((item) => {
+    const [, month] = item.month.split("-");
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    const monthIndex = parseInt(month, 10) - 1;
+    return {
+      ...item,
+      monthLabel: monthNames[monthIndex],
+    };
+  });
 
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -221,26 +257,28 @@ export const IncomeExpenseBarChart: React.FC<BarChartProps> = ({
       >
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke={darkMode ? '#374151' : '#e5e7eb'}
+          stroke={darkMode ? "#374151" : "#e5e7eb"}
           vertical={false}
         />
         <XAxis
           dataKey="monthLabel"
-          tick={{ fill: darkMode ? '#9ca3af' : '#6b7280', fontSize: 12 }}
-          axisLine={{ stroke: darkMode ? '#374151' : '#e5e7eb' }}
+          tick={{ fill: darkMode ? "#9ca3af" : "#6b7280", fontSize: 12 }}
+          axisLine={{ stroke: darkMode ? "#374151" : "#e5e7eb" }}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: darkMode ? '#9ca3af' : '#6b7280', fontSize: 12 }}
+          tick={{ fill: darkMode ? "#9ca3af" : "#6b7280", fontSize: 12 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(value) => `$${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`}
+          tickFormatter={(value) =>
+            `$${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`
+          }
         />
         <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
         <Legend
-          wrapperStyle={{ paddingTop: '10px' }}
+          wrapperStyle={{ paddingTop: "10px" }}
           formatter={(value) => (
-            <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
+            <span className={darkMode ? "text-gray-300" : "text-gray-600"}>
               {value.charAt(0).toUpperCase() + value.slice(1)}
             </span>
           )}
@@ -266,16 +304,21 @@ export const IncomeExpenseBarChart: React.FC<BarChartProps> = ({
 export const SpendingTrendChart: React.FC<AreaChartProps> = ({
   data,
   darkMode,
-  color = '#6366f1',
+  color = "#6366f1",
   // title,
 }) => {
   if (data.length === 0) {
     return (
       <div
         className={`flex flex-col items-center justify-center h-48 ${
-          darkMode ? 'text-gray-400' : 'text-gray-500'
+          darkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
+        <div
+          className={`p-3 rounded-full mb-2 ${darkMode ? "bg-gray-700/50" : "bg-gray-100"}`}
+        >
+          <TrendingUp className="w-8 h-8 opacity-50" />
+        </div>
         <p className="text-sm">No trend data available</p>
       </div>
     );
@@ -283,7 +326,10 @@ export const SpendingTrendChart: React.FC<AreaChartProps> = ({
 
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+      <AreaChart
+        data={data}
+        margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+      >
         <defs>
           <linearGradient id={`gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={color} stopOpacity={0.3} />
@@ -292,17 +338,17 @@ export const SpendingTrendChart: React.FC<AreaChartProps> = ({
         </defs>
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke={darkMode ? '#374151' : '#e5e7eb'}
+          stroke={darkMode ? "#374151" : "#e5e7eb"}
           vertical={false}
         />
         <XAxis
           dataKey="date"
-          tick={{ fill: darkMode ? '#9ca3af' : '#6b7280', fontSize: 10 }}
+          tick={{ fill: darkMode ? "#9ca3af" : "#6b7280", fontSize: 10 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: darkMode ? '#9ca3af' : '#6b7280', fontSize: 10 }}
+          tick={{ fill: darkMode ? "#9ca3af" : "#6b7280", fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(value) => `$${value}`}
@@ -325,12 +371,13 @@ export const SpendingTrendChart: React.FC<AreaChartProps> = ({
 export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
   data,
   darkMode,
+  currencySymbol = "$",
 }) => {
   if (data.length === 0) {
     return (
       <div
         className={`flex flex-col items-center justify-center h-48 ${
-          darkMode ? 'text-gray-400' : 'text-gray-500'
+          darkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
         <p className="text-sm">No budget data available</p>
@@ -354,7 +401,7 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
     return (
       <div
         className={`flex flex-col items-center justify-center h-48 ${
-          darkMode ? 'text-gray-400' : 'text-gray-500'
+          darkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
         <p className="text-sm">Set category budgets in settings</p>
@@ -367,16 +414,18 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
       {budgetData.map((item, index) => (
         <div key={index} className="space-y-1">
           <div className="flex justify-between items-center text-sm">
-            <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+            <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
               {item.name}
             </span>
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
-              ${item.spent.toFixed(0)} / ${item.budget.toFixed(0)}
+            <span className={darkMode ? "text-gray-400" : "text-gray-500"}>
+              {currencySymbol}
+              {item.spent.toFixed(0)} / {currencySymbol}
+              {item.budget.toFixed(0)}
             </span>
           </div>
           <div
             className={`h-3 rounded-full overflow-hidden ${
-              darkMode ? 'bg-gray-700' : 'bg-gray-200'
+              darkMode ? "bg-gray-700" : "bg-gray-200"
             }`}
           >
             <div
@@ -385,10 +434,10 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
                 width: `${item.percentage}%`,
                 backgroundColor:
                   item.percentage >= 100
-                    ? '#ef4444'
+                    ? "#ef4444"
                     : item.percentage >= 80
-                    ? '#f59e0b'
-                    : item.color,
+                      ? "#f59e0b"
+                      : item.color,
               }}
             />
           </div>
@@ -405,6 +454,7 @@ interface SummaryStatsProps {
   transactionCount: number;
   averageExpense: number;
   darkMode: boolean;
+  currencySymbol?: string;
 }
 
 export const SummaryStats: React.FC<SummaryStatsProps> = ({
@@ -413,27 +463,28 @@ export const SummaryStats: React.FC<SummaryStatsProps> = ({
   transactionCount,
   averageExpense,
   darkMode,
+  currencySymbol = "$",
 }) => {
   const stats = [
     {
-      label: 'Total Income',
-      value: `$${totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      color: 'text-green-500',
+      label: "Total Income",
+      value: `${currencySymbol}${totalIncome.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      color: "text-green-500",
     },
     {
-      label: 'Total Expenses',
-      value: `$${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      color: 'text-red-500',
+      label: "Total Expenses",
+      value: `${currencySymbol}${totalExpenses.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      color: "text-red-500",
     },
     {
-      label: 'Transactions',
+      label: "Transactions",
       value: transactionCount.toString(),
-      color: darkMode ? 'text-indigo-400' : 'text-indigo-600',
+      color: darkMode ? "text-indigo-400" : "text-indigo-600",
     },
     {
-      label: 'Avg. Expense',
-      value: `$${averageExpense.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      color: darkMode ? 'text-purple-400' : 'text-purple-600',
+      label: "Avg. Expense",
+      value: `${currencySymbol}${averageExpense.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      color: darkMode ? "text-purple-400" : "text-purple-600",
     },
   ];
 
@@ -443,12 +494,12 @@ export const SummaryStats: React.FC<SummaryStatsProps> = ({
         <div
           key={index}
           className={`p-4 rounded-xl ${
-            darkMode ? 'bg-gray-700' : 'bg-gray-50'
+            darkMode ? "bg-gray-700" : "bg-gray-50"
           }`}
         >
           <p
             className={`text-xs md:text-sm ${
-              darkMode ? 'text-gray-400' : 'text-gray-500'
+              darkMode ? "text-gray-400" : "text-gray-500"
             }`}
           >
             {stat.label}

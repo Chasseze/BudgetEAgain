@@ -85,9 +85,10 @@ const CategoryBadge: React.FC<CategoryBadgeProps> = ({
     <span
       className={`inline-flex items-center rounded-full font-medium transition-all duration-200 hover:scale-105 ${sizeClasses[size]}`}
       style={{
-        backgroundColor: `${config.color}20`,
+        backgroundColor: `${config.color}35`,
         color: config.color,
-        border: `1px solid ${config.color}40`,
+        border: `1px solid ${config.color}70`,
+        boxShadow: `inset 3px 0 0 ${config.color}`,
       }}
     >
       {showIcon && (

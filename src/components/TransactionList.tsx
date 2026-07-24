@@ -1,10 +1,10 @@
-import React from 'react';
-import { Trash2, Edit2, Eye, RefreshCw } from 'lucide-react';
-import CategoryBadge from './CategoryBadge';
+import React from "react";
+import { Trash2, Edit2, Eye, RefreshCw, Inbox } from "lucide-react";
+import CategoryBadge from "./CategoryBadge";
 
 interface Transaction {
   id: string;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   amount: number;
   category: string;
   description: string;
@@ -20,6 +20,7 @@ interface TransactionListProps {
   onViewReceipt: (receipt: string) => void;
   darkMode: boolean;
   searchQuery?: string;
+  currencySymbol?: string;
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({
@@ -28,21 +29,22 @@ const TransactionList: React.FC<TransactionListProps> = ({
   onDelete,
   onViewReceipt,
   darkMode,
-  searchQuery = '',
+  searchQuery = "",
+  currencySymbol = "$",
 }) => {
   // Format date for display
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
   };
 
   // Format amount
   const formatAmount = (amount: number): string => {
-    return amount.toLocaleString('en-US', {
+    return amount.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -52,48 +54,61 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const highlightText = (text: string, query: string): React.ReactNode => {
     if (!query.trim()) return text;
 
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const regex = new RegExp(
+      `(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+      "gi",
+    );
     const parts = text.split(regex);
 
     return parts.map((part, index) =>
       regex.test(part) ? (
-        <mark key={index} className="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">
+        <mark
+          key={index}
+          className="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5"
+        >
           {part}
         </mark>
       ) : (
         part
-      )
+      ),
     );
   };
 
   // Group transactions by date
-  const groupedTransactions = transactions.reduce((groups, transaction) => {
-    const date = transaction.date;
-    if (!groups[date]) {
-      groups[date] = [];
-    }
-    groups[date].push(transaction);
-    return groups;
-  }, {} as Record<string, Transaction[]>);
+  const groupedTransactions = transactions.reduce(
+    (groups, transaction) => {
+      const date = transaction.date;
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(transaction);
+      return groups;
+    },
+    {} as Record<string, Transaction[]>,
+  );
 
   // Sort dates descending
   const sortedDates = Object.keys(groupedTransactions).sort(
-    (a, b) => new Date(b).getTime() - new Date(a).getTime()
+    (a, b) => new Date(b).getTime() - new Date(a).getTime(),
   );
 
   if (transactions.length === 0) {
     return (
       <div
         className={`text-center py-12 ${
-          darkMode ? 'text-gray-400' : 'text-gray-500'
+          darkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
-        <div className="text-6xl mb-4">📭</div>
+        <div
+          className={`inline-flex p-5 rounded-full mb-4 ${darkMode ? "bg-gray-700/50" : "bg-gray-100"}`}
+        >
+          <Inbox className="w-12 h-12 opacity-50" />
+        </div>
         <p className="text-lg font-medium">No transactions found</p>
         <p className="text-sm mt-1">
           {searchQuery
-            ? 'Try adjusting your search or filters'
-            : 'Add your first transaction to get started'}
+            ? "Try adjusting your search or filters"
+            : "Add your first transaction to get started"}
         </p>
       </div>
     );
@@ -106,12 +121,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
           {/* Date Header */}
           <div
             className={`sticky top-0 z-10 py-2 px-1 mb-2 ${
-              darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50'
+              darkMode
+                ? "bg-gray-800/80 backdrop-blur-sm"
+                : "bg-white/80 backdrop-blur-sm"
             }`}
           >
             <h3
               className={`text-sm font-semibold ${
-                darkMode ? 'text-gray-400' : 'text-gray-600'
+                darkMode ? "text-gray-400" : "text-gray-600"
               }`}
             >
               {formatDate(date)}
@@ -124,13 +141,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
               <div
                 key={transaction.id}
                 className={`group flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-xl border-2 transition-all duration-300 hover:shadow-lg ${
-                  transaction.type === 'income'
+                  transaction.type === "income"
                     ? darkMode
-                      ? 'border-green-800 bg-green-900/30 hover:bg-green-900/50'
-                      : 'border-green-200 bg-green-50 hover:bg-green-100'
+                      ? "border-green-800 bg-green-900/30 hover:bg-green-900/50"
+                      : "border-green-200 bg-green-50 hover:bg-green-100"
                     : darkMode
-                    ? 'border-red-800 bg-red-900/30 hover:bg-red-900/50'
-                    : 'border-red-200 bg-red-50 hover:bg-red-100'
+                      ? "border-red-800 bg-red-900/30 hover:bg-red-900/50"
+                      : "border-red-200 bg-red-50 hover:bg-red-100"
                 }`}
               >
                 {/* Left side - Info */}
@@ -138,7 +155,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <h4
                       className={`font-semibold truncate ${
-                        darkMode ? 'text-white' : 'text-gray-800'
+                        darkMode ? "text-white" : "text-gray-800"
                       }`}
                     >
                       {highlightText(transaction.description, searchQuery)}
@@ -149,8 +166,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
                           darkMode
-                            ? 'bg-indigo-900/50 text-indigo-300'
-                            : 'bg-indigo-100 text-indigo-600'
+                            ? "bg-indigo-900/50 text-indigo-300"
+                            : "bg-indigo-100 text-indigo-600"
                         }`}
                       >
                         <RefreshCw className="w-3 h-3" />
@@ -164,8 +181,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
                         onClick={() => onViewReceipt(transaction.receipt!)}
                         className={`p-1 rounded-full transition-colors ${
                           darkMode
-                            ? 'text-indigo-400 hover:bg-indigo-900/50'
-                            : 'text-indigo-600 hover:bg-indigo-100'
+                            ? "text-indigo-400 hover:bg-indigo-900/50"
+                            : "text-indigo-600 hover:bg-indigo-100"
                         }`}
                         title="View receipt"
                       >
@@ -182,7 +199,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   {/* Date on mobile */}
                   <p
                     className={`text-xs sm:hidden ${
-                      darkMode ? 'text-gray-500' : 'text-gray-400'
+                      darkMode ? "text-gray-500" : "text-gray-400"
                     }`}
                   >
                     {formatDate(transaction.date)}
@@ -194,12 +211,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   {/* Amount */}
                   <span
                     className={`text-xl sm:text-2xl font-bold whitespace-nowrap ${
-                      transaction.type === 'income'
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
+                      transaction.type === "income"
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-red-600 dark:text-red-400"
                     }`}
                   >
-                    {transaction.type === 'income' ? '+' : '-'}$
+                    {transaction.type === "income" ? "+" : "-"}
+                    {currencySymbol}
                     {formatAmount(transaction.amount)}
                   </span>
 
@@ -209,8 +227,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
                       onClick={() => onEdit(transaction)}
                       className={`p-2 rounded-lg transition-all ${
                         darkMode
-                          ? 'text-gray-400 hover:text-indigo-400 hover:bg-indigo-900/50'
-                          : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-100'
+                          ? "text-gray-400 hover:text-indigo-400 hover:bg-indigo-900/50"
+                          : "text-gray-500 hover:text-indigo-600 hover:bg-indigo-100"
                       }`}
                       title="Edit transaction"
                     >
@@ -221,8 +239,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
                       onClick={() => onDelete(transaction.id)}
                       className={`p-2 rounded-lg transition-all ${
                         darkMode
-                          ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/50'
-                          : 'text-gray-500 hover:text-red-600 hover:bg-red-100'
+                          ? "text-gray-400 hover:text-red-400 hover:bg-red-900/50"
+                          : "text-gray-500 hover:text-red-600 hover:bg-red-100"
                       }`}
                       title="Delete transaction"
                     >

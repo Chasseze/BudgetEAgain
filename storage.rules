@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the file
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to validate file size (max 5MB)
+    function isValidSize() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+    
+    // Helper function to validate image file type
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    // Receipt images - users can only access their own receipts
+    match /receipts/{userId}/{fileName} {
+      // Allow read and delete for owner
+      allow read, delete: if isOwner(userId);
+      
+      // Allow write for owner with validation
+      allow write: if isOwner(userId) 
+                   && isImage() 
+                   && isValidSize();
+    }
+    
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

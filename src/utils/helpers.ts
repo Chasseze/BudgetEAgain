@@ -7,6 +7,7 @@ export const getDateRange = (filter: string): { start: Date; end: Date } => {
   switch (filter) {
     case 'today':
       start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       break;
     case 'week':
       start.setDate(now.getDate() - 7);
@@ -79,6 +80,15 @@ export const debounce = <T extends (...args: unknown[]) => unknown>(
   };
 };
 
+// Escape a value for safe inclusion in a CSV cell
+const escapeCSVField = (value: string | number): string => {
+  const str = String(value);
+  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
 // Export transactions to CSV
 export const exportToCSV = (
   transactions: Array<{
@@ -93,7 +103,7 @@ export const exportToCSV = (
   const csvContent = [
     headers.join(','),
     ...transactions.map((t) =>
-      [t.date, t.type, t.category, `"${t.description}"`, t.amount].join(',')
+      [t.date, t.type, t.category, escapeCSVField(t.description), t.amount].join(',')
     ),
   ].join('\n');
 

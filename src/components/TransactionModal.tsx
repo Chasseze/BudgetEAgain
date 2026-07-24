@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { X, Camera, Upload, RefreshCw, Loader2 } from 'lucide-react';
-import { storage } from '../config/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import React, { useState, useEffect } from "react";
+import { X, Camera, Upload, RefreshCw, Loader2 } from "lucide-react";
+import { storage } from "../config/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 interface TransactionFormData {
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   amount: string;
   category: string;
   description: string;
   date: string;
   receipt: string | null;
   isRecurring: boolean;
-  recurringFrequency?: 'weekly' | 'monthly' | 'yearly';
+  recurringFrequency?: "weekly" | "monthly" | "yearly";
 }
 
 interface TransactionModalProps {
@@ -24,20 +24,26 @@ interface TransactionModalProps {
   userId?: string;
   expenseCategories?: string[];
   incomeCategories?: string[];
+  currencySymbol?: string;
 }
 
 const DEFAULT_EXPENSE_CATEGORIES = [
-  'Food & Dining',
-  'Transportation',
-  'Entertainment',
-  'Bills & Utilities',
-  'Shopping',
-  'Healthcare',
-  'Education',
-  'Other',
+  "Food & Dining",
+  "Transportation",
+  "Entertainment",
+  "Bills & Utilities",
+  "Shopping",
+  "Healthcare",
+  "Education",
+  "Other",
 ];
 
-const DEFAULT_INCOME_CATEGORIES = ['Salary', 'Freelance', 'Investment', 'Other'];
+const DEFAULT_INCOME_CATEGORIES = [
+  "Salary",
+  "Freelance",
+  "Investment",
+  "Other",
+];
 
 const TransactionModal: React.FC<TransactionModalProps> = ({
   isOpen,
@@ -49,19 +55,21 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   userId,
   expenseCategories = DEFAULT_EXPENSE_CATEGORIES,
   incomeCategories = DEFAULT_INCOME_CATEGORIES,
+  currencySymbol = "$",
 }) => {
   const defaultFormData: TransactionFormData = {
-    type: 'expense',
-    amount: '',
-    category: 'Food & Dining',
-    description: '',
-    date: new Date().toISOString().split('T')[0],
+    type: "expense",
+    amount: "",
+    category: "Food & Dining",
+    description: "",
+    date: new Date().toISOString().split("T")[0],
     receipt: null,
     isRecurring: false,
-    recurringFrequency: 'monthly',
+    recurringFrequency: "monthly",
   };
 
-  const [formData, setFormData] = useState<TransactionFormData>(defaultFormData);
+  const [formData, setFormData] =
+    useState<TransactionFormData>(defaultFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
@@ -77,29 +85,55 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   // Update category when type changes
   useEffect(() => {
-    const categories = formData.type === 'expense' ? expenseCategories : incomeCategories;
+    const categories =
+      formData.type === "expense" ? expenseCategories : incomeCategories;
     if (!categories.includes(formData.category)) {
-      setFormData(prev => ({ ...prev, category: categories[0] }));
+      setFormData((prev) => ({ ...prev, category: categories[0] }));
     }
   }, [formData.type, expenseCategories, incomeCategories]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >,
   ) => {
     const { name, value, type } = e.target;
 
-    if (type === 'checkbox') {
-      setFormData(prev => ({
+    if (type === "checkbox") {
+      setFormData((prev) => ({
         ...prev,
         [name]: (e.target as HTMLInputElement).checked,
       }));
     } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
+      setFormData((prev) => ({ ...prev, [name]: value }));
     }
 
     // Clear error when user types
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  // Validate a single field on blur
+  const handleBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const { name, value } = e.target;
+    if (name === "amount") {
+      if (!value || parseFloat(value) <= 0) {
+        setErrors((prev) => ({
+          ...prev,
+          amount: "Please enter a valid amount",
+        }));
+      }
+    }
+    if (name === "description") {
+      if (!value.trim()) {
+        setErrors((prev) => ({
+          ...prev,
+          description: "Please enter a description",
+        }));
+      }
     }
   };
 
@@ -109,13 +143,19 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
     // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setErrors(prev => ({ ...prev, receipt: 'File size must be less than 5MB' }));
+      setErrors((prev) => ({
+        ...prev,
+        receipt: "File size must be less than 5MB",
+      }));
       return;
     }
 
     // Check file type
-    if (!file.type.startsWith('image/')) {
-      setErrors(prev => ({ ...prev, receipt: 'Please upload an image file' }));
+    if (!file.type.startsWith("image/")) {
+      setErrors((prev) => ({
+        ...prev,
+        receipt: "Please upload an image file",
+      }));
       return;
     }
 
@@ -131,29 +171,34 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       setIsUploadingReceipt(true);
       try {
         const timestamp = Date.now();
-        const fileName = `receipts/${userId}/${timestamp}_${file.name}`;
+        const randomSuffix = Math.random().toString(36).slice(2, 10);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const fileName = `receipts/${userId}/${timestamp}_${randomSuffix}_${safeName}`;
         const storageRef = ref(storage, fileName);
-        
+
         await uploadBytes(storageRef, file);
         const downloadURL = await getDownloadURL(storageRef);
-        
-        setFormData(prev => ({ ...prev, receipt: downloadURL }));
-        setErrors(prev => ({ ...prev, receipt: '' }));
+
+        setFormData((prev) => ({ ...prev, receipt: downloadURL }));
+        setErrors((prev) => ({ ...prev, receipt: "" }));
       } catch (error) {
-        console.error('Error uploading receipt:', error);
-        setErrors(prev => ({ ...prev, receipt: 'Failed to upload receipt. Please try again.' }));
+        console.error("Error uploading receipt:", error);
+        setErrors((prev) => ({
+          ...prev,
+          receipt: "Failed to upload receipt. Please try again.",
+        }));
         setReceiptPreview(null);
       } finally {
         setIsUploadingReceipt(false);
       }
     } else {
       // Fallback to base64 if no userId (shouldn't happen in production)
-      setFormData(prev => ({ ...prev, receipt: reader.result as string }));
+      setFormData((prev) => ({ ...prev, receipt: reader.result as string }));
     }
   };
 
   const removeReceipt = () => {
-    setFormData(prev => ({ ...prev, receipt: null }));
+    setFormData((prev) => ({ ...prev, receipt: null }));
     setReceiptPreview(null);
   };
 
@@ -161,15 +206,15 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     const newErrors: Record<string, string> = {};
 
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      newErrors.amount = 'Please enter a valid amount';
+      newErrors.amount = "Please enter a valid amount";
     }
 
     if (!formData.description.trim()) {
-      newErrors.description = 'Please enter a description';
+      newErrors.description = "Please enter a description";
     }
 
     if (!formData.date) {
-      newErrors.date = 'Please select a date';
+      newErrors.date = "Please select a date";
     }
 
     setErrors(newErrors);
@@ -178,7 +223,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
+    if (isUploadingReceipt) return;
     if (validateForm()) {
       onSubmit(formData);
     }
@@ -186,31 +231,38 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   if (!isOpen) return null;
 
-  const categories = formData.type === 'expense' ? expenseCategories : incomeCategories;
+  const categories =
+    formData.type === "expense" ? expenseCategories : incomeCategories;
 
   // Styling classes
-  const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
+  const bgCard = darkMode
+    ? "bg-gray-800/95 backdrop-blur-sm"
+    : "bg-white/95 backdrop-blur-sm";
+  const textPrimary = darkMode ? "text-white" : "text-gray-900";
+  const textSecondary = darkMode ? "text-gray-400" : "text-gray-600";
   const inputBg = darkMode
-    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500';
-  const labelClass = `block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`;
+    ? "bg-gray-700/80 border-gray-600 text-white placeholder-gray-400"
+    : "bg-white/90 border-gray-300 text-gray-900 placeholder-gray-500";
+  const labelClass = `block text-sm font-medium mb-2 ${darkMode ? "text-gray-300" : "text-gray-700"}`;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
       <div
-        className={`${bgCard} rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col`}
+        className={`${bgCard} rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-scale-in`}
       >
         {/* Header */}
-        <div className={`flex justify-between items-center p-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+        <div
+          className={`flex justify-between items-center p-6 border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}
+        >
           <h2 className={`text-xl md:text-2xl font-bold ${textPrimary}`}>
-            {isEditing ? 'Edit Transaction' : 'Add Transaction'}
+            {isEditing ? "Edit Transaction" : "Add Transaction"}
           </h2>
           <button
             onClick={onClose}
             className={`p-2 rounded-lg transition-colors ${
-              darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'
+              darkMode
+                ? "hover:bg-gray-700 text-gray-400"
+                : "hover:bg-gray-100 text-gray-500"
             }`}
             aria-label="Close modal"
           >
@@ -219,33 +271,40 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto p-6 space-y-5"
+        >
           {/* Transaction Type */}
           <div>
             <label className={labelClass}>Type</label>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, type: 'expense' }))}
+                onClick={() =>
+                  setFormData((prev) => ({ ...prev, type: "expense" }))
+                }
                 className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${
-                  formData.type === 'expense'
-                    ? 'bg-red-500 text-white shadow-lg'
+                  formData.type === "expense"
+                    ? "bg-red-500 text-white shadow-lg"
                     : darkMode
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
                 Expense
               </button>
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, type: 'income' }))}
+                onClick={() =>
+                  setFormData((prev) => ({ ...prev, type: "income" }))
+                }
                 className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${
-                  formData.type === 'income'
-                    ? 'bg-green-500 text-white shadow-lg'
+                  formData.type === "income"
+                    ? "bg-green-500 text-white shadow-lg"
                     : darkMode
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
                 Income
@@ -254,13 +313,12 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           {/* Amount */}
-          <div>
-            <label htmlFor="amount" className={labelClass}>
-              Amount
-            </label>
+          <div className="floating-label-group">
             <div className="relative">
-              <span className={`absolute left-4 top-1/2 -translate-y-1/2 ${textSecondary}`}>
-                $
+              <span
+                className={`absolute left-4 top-1/2 -translate-y-1/2 ${textSecondary} z-10`}
+              >
+                {currencySymbol}
               </span>
               <input
                 type="number"
@@ -268,13 +326,17 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 name="amount"
                 value={formData.amount}
                 onChange={handleInputChange}
+                onBlur={handleBlur}
                 step="0.01"
                 min="0"
-                placeholder="0.00"
+                placeholder=" "
                 className={`w-full pl-8 pr-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg} ${
-                  errors.amount ? 'border-red-500' : ''
+                  errors.amount ? "border-red-500" : ""
                 }`}
               />
+              <label htmlFor="amount" className={labelClass}>
+                Amount
+              </label>
             </div>
             {errors.amount && (
               <p className="mt-1 text-sm text-red-500">{errors.amount}</p>
@@ -302,54 +364,60 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           {/* Description */}
-          <div>
-            <label htmlFor="description" className={labelClass}>
-              Description
-            </label>
+          <div className="floating-label-group">
             <input
               type="text"
               id="description"
               name="description"
               value={formData.description}
               onChange={handleInputChange}
-              placeholder="What was this for?"
+              onBlur={handleBlur}
+              placeholder=" "
               maxLength={100}
               className={`w-full px-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg} ${
-                errors.description ? 'border-red-500' : ''
+                errors.description ? "border-red-500" : ""
               }`}
             />
+            <label htmlFor="description" className={labelClass}>
+              Description
+            </label>
             {errors.description && (
               <p className="mt-1 text-sm text-red-500">{errors.description}</p>
             )}
           </div>
 
           {/* Date */}
-          <div>
-            <label htmlFor="date" className={labelClass}>
-              Date
-            </label>
+          <div className="floating-label-group">
             <input
               type="date"
               id="date"
               name="date"
               value={formData.date}
               onChange={handleInputChange}
+              placeholder=" "
               className={`w-full px-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg} ${
-                errors.date ? 'border-red-500' : ''
+                errors.date ? "border-red-500" : ""
               }`}
             />
+            <label htmlFor="date" className={labelClass}>
+              Date
+            </label>
             {errors.date && (
               <p className="mt-1 text-sm text-red-500">{errors.date}</p>
             )}
           </div>
 
           {/* Recurring Transaction */}
-          <div className={`flex items-center justify-between p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+          <div
+            className={`flex items-center justify-between p-4 rounded-xl ${darkMode ? "bg-gray-700" : "bg-gray-50"}`}
+          >
             <div className="flex items-center gap-3">
               <RefreshCw className={`w-5 h-5 ${textSecondary}`} />
               <div>
                 <p className={`font-medium ${textPrimary}`}>Recurring</p>
-                <p className={`text-sm ${textSecondary}`}>Repeats automatically</p>
+                <p className={`text-sm ${textSecondary}`}>
+                  Repeats automatically
+                </p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -398,7 +466,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   </div>
                 )}
                 <img
-                  src={receiptPreview || formData.receipt || ''}
+                  src={receiptPreview || formData.receipt || ""}
                   alt="Receipt preview"
                   className="w-full h-40 object-cover rounded-xl"
                 />
@@ -417,8 +485,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <label
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl cursor-pointer transition-all ${
                     darkMode
-                      ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-900/70'
-                      : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                      ? "bg-indigo-900/50 text-indigo-300 hover:bg-indigo-900/70"
+                      : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
                   }`}
                 >
                   <Camera className="w-5 h-5" />
@@ -434,8 +502,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <label
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl cursor-pointer transition-all ${
                     darkMode
-                      ? 'bg-purple-900/50 text-purple-300 hover:bg-purple-900/70'
-                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                      ? "bg-purple-900/50 text-purple-300 hover:bg-purple-900/70"
+                      : "bg-purple-100 text-purple-700 hover:bg-purple-200"
                   }`}
                 >
                   <Upload className="w-5 h-5" />
@@ -456,15 +524,17 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
         </form>
 
         {/* Footer */}
-        <div className={`p-6 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+        <div
+          className={`p-6 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`}
+        >
           <div className="flex gap-3">
             <button
               type="button"
               onClick={onClose}
               className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all ${
                 darkMode
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
               Cancel
@@ -472,9 +542,10 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             <button
               type="submit"
               onClick={handleSubmit}
-              className="flex-1 py-3 px-4 rounded-xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg hover:scale-[1.02] transition-all"
+              disabled={isUploadingReceipt}
+              className="flex-1 py-3 px-4 rounded-xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
             >
-              {isEditing ? 'Update' : 'Add Transaction'}
+              {isUploadingReceipt ? "Uploading receipt…" : isEditing ? "Update" : "Add Transaction"}
             </button>
           </div>
         </div>

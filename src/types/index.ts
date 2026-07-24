@@ -1,6 +1,6 @@
 // Transaction Types
 export interface Transaction {
-  id: number;
+  id: string;
   type: 'income' | 'expense';
   amount: number;
   category: string;
@@ -13,7 +13,7 @@ export interface Transaction {
 
 // Savings Goal Types
 export interface SavingsGoal {
-  id: number;
+  id: string;
   name: string;
   targetAmount: number;
   currentAmount: number;

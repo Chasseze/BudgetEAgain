@@ -19,8 +19,10 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab, darkMode
   return (
     <nav
       className={`fixed bottom-0 left-0 right-0 md:hidden ${
-        darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
-      } border-t z-40 shadow-lg`}
+        darkMode
+          ? 'bg-gray-900/90 backdrop-blur-md border-gray-700/60'
+          : 'bg-white/90 backdrop-blur-md border-gray-200/80'
+      } border-t z-40 shadow-2xl`}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex justify-around items-center py-2 px-1">
