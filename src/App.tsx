@@ -61,6 +61,13 @@ import SpendingHeatmap from "./components/SpendingHeatmap";
 import CategoryComparisonTable from "./components/CategoryComparisonTable";
 import CSVImportModal from "./components/CSVImportModal";
 import QuickAddFAB from "./components/QuickAddFAB";
+import RecurringBanner, {
+  DueOccurrence,
+} from "./components/RecurringBanner";
+import SpendingNudge from "./components/SpendingNudge";
+import BudgetHistoryCard, {
+  BudgetSnapshot,
+} from "./components/BudgetHistoryCard";
 import Auth from "./components/Auth";
 
 // Utils
@@ -89,6 +96,7 @@ import {
   query,
   orderBy,
   setDoc,
+  getDoc,
   getDocs,
   writeBatch,
 } from "firebase/firestore";
@@ -105,6 +113,7 @@ interface Transaction {
   receipt: string | null;
   isRecurring?: boolean;
   recurringFrequency?: "weekly" | "monthly" | "yearly";
+  goalId?: string | null;
 }
 
 interface SavingsGoal {
@@ -125,6 +134,7 @@ interface TransactionFormData {
   receipt: string | null;
   isRecurring: boolean;
   recurringFrequency?: "weekly" | "monthly" | "yearly";
+  goalId?: string;
 }
 
 interface ToastData {
@@ -237,6 +247,7 @@ const App: React.FC = () => {
           receipt: data.receipt ?? null,
           isRecurring: data.isRecurring,
           recurringFrequency: data.recurringFrequency,
+          goalId: data.goalId ?? null,
         };
       });
       setTransactions(txs);
@@ -376,6 +387,53 @@ const App: React.FC = () => {
       // Revert on error would require storing previous values
     }
   };
+
+  // Budget history snapshots (users/{uid}/budgetHistory/{YYYY-MM})
+  const [budgetSnapshots, setBudgetSnapshots] = useState<BudgetSnapshot[]>([]);
+
+  React.useEffect(() => {
+    if (!db || !user) {
+      setBudgetSnapshots([]);
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      collection(db, `users/${user.uid}/budgetHistory`),
+      (snapshot) => {
+        setBudgetSnapshots(
+          snapshot.docs.map((d) => ({
+            month: d.id,
+            budgetLimit: d.data().budgetLimit ?? 0,
+          })),
+        );
+      },
+    );
+    return () => unsubscribe();
+  }, [user]);
+
+  // Once per session: snapshot last month's budget so history stays accurate
+  // even after the user changes their budget later
+  const snapshotWritten = React.useRef(false);
+  React.useEffect(() => {
+    if (!db || !user || isDataLoading || snapshotWritten.current) return;
+    const d = new Date();
+    const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const monthKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+    const hadActivity = transactions.some((t) => t.date.startsWith(monthKey));
+    if (!hadActivity) return;
+    snapshotWritten.current = true;
+    const ref = doc(db, `users/${user.uid}/budgetHistory`, monthKey);
+    getDoc(ref)
+      .then((snap) => {
+        if (!snap.exists()) {
+          return setDoc(ref, {
+            budgetLimit,
+            categoryBudgets,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      })
+      .catch((err) => console.error("Budget snapshot failed:", err));
+  }, [user, isDataLoading, transactions, budgetLimit, categoryBudgets]);
 
   // User-scoped settings (currency, email reports, custom categories)
   React.useEffect(() => {
@@ -586,21 +644,60 @@ const App: React.FC = () => {
       showToast("Transaction updated!");
       setEditingTransaction(null);
     } else {
+      const amount = Number(formData.amount);
+      const goalId = formData.goalId || null;
       const newTransaction = {
         type: formData.type,
-        amount: Number(formData.amount),
+        amount,
         category: formData.category,
         description: formData.description,
         date: formData.date,
         receipt: formData.receipt,
         isRecurring: formData.isRecurring,
         recurringFrequency: formData.recurringFrequency,
+        goalId,
       };
       await addTransaction(newTransaction);
-      showToast("Transaction added!");
+
+      // Linked goal contribution: bump the goal's progress too
+      const goal = goalId ? savingsGoals.find((g) => g.id === goalId) : null;
+      if (goal) {
+        const newAmount = Math.min(
+          goal.currentAmount + amount,
+          goal.targetAmount,
+        );
+        await updateGoal(goal.id, { currentAmount: newAmount });
+        showToast(`Transaction added & "${goal.name}" updated!`);
+      } else {
+        showToast("Transaction added!");
+      }
     }
     setShowAddModal(false);
     setPresetType(null);
+  };
+
+  // Post all due recurring occurrences in one batch
+  const handlePostRecurring = async (due: DueOccurrence[]) => {
+    if (!db || !user || due.length === 0) return;
+    const batch = writeBatch(db);
+    due.forEach((d) => {
+      const ref = doc(collection(db!, `users/${user.uid}/transactions`));
+      batch.set(ref, {
+        type: d.type,
+        amount: d.amount,
+        category: d.category,
+        description: d.description,
+        date: d.date,
+        receipt: null,
+        isRecurring: true,
+        recurringFrequency: d.recurringFrequency,
+        goalId: null,
+      });
+    });
+    await batch.commit();
+    showToast(
+      `Added ${due.length} recurring transaction${due.length !== 1 ? "s" : ""}!`,
+    );
   };
 
   const handleEditTransaction = (transaction: Transaction) => {
@@ -978,6 +1075,16 @@ const App: React.FC = () => {
         {/* ==================== HOME TAB ==================== */}
         {activeTab === "home" && (
           <>
+            {/* Recurring transactions due */}
+            {!isDataLoading && (
+              <RecurringBanner
+                transactions={transactions}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+                onPostAll={handlePostRecurring}
+              />
+            )}
+
             {/* Hero / Welcome Banner */}
             <div
               className={`mb-6 rounded-3xl overflow-hidden relative ${
@@ -1144,8 +1251,8 @@ const App: React.FC = () => {
 
             </div>
 
-            {/* Insight row – Financial Health Score + Month-End Forecast */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            {/* Insight row – Health Score + Forecast + Spending Check */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
               <HealthScore
                 totalIncome={totalIncome}
                 totalExpenses={totalExpenses}
@@ -1156,6 +1263,11 @@ const App: React.FC = () => {
               <SpendingForecast
                 transactions={transactions}
                 budgetLimit={budgetLimit}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+              <SpendingNudge
+                transactions={transactions}
                 darkMode={darkMode}
                 currencySymbol={currencySymbol}
               />
@@ -1544,6 +1656,18 @@ const App: React.FC = () => {
                   currencySymbol={currencySymbol}
                 />
               </div>
+
+              <div
+                className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 transition-all duration-300 card-hover`}
+              >
+                <BudgetHistoryCard
+                  transactions={transactions}
+                  snapshots={budgetSnapshots}
+                  currentBudgetLimit={budgetLimit}
+                  darkMode={darkMode}
+                  currencySymbol={currencySymbol}
+                />
+              </div>
             </div>
 
             {/* Spending Insights */}
@@ -1708,6 +1832,7 @@ const App: React.FC = () => {
         expenseCategories={expenseCategories}
         incomeCategories={incomeCategories}
         currencySymbol={currencySymbol}
+        goals={savingsGoals.map((g) => ({ id: g.id, name: g.name }))}
       />
 
       {/* Goal Modal */}

@@ -483,7 +483,7 @@ export const SummaryStats: React.FC<SummaryStatsProps> = ({
     },
     {
       label: "Avg. Expense",
-      value: `${currencySymbol}${averageExpense.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      value: `${currencySymbol}${averageExpense.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       color: darkMode ? "text-purple-400" : "text-purple-600",
     },
   ];

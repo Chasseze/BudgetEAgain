@@ -32,6 +32,11 @@ service cloud.firestore {
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }
+
+      // Budget history snapshots subcollection
+      match /budgetHistory/{monthId} {
+        allow read, write: if isOwner(userId);
+      }
     }
     
     // Deny all other access

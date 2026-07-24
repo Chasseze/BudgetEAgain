@@ -12,6 +12,7 @@ interface TransactionFormData {
   receipt: string | null;
   isRecurring: boolean;
   recurringFrequency?: "weekly" | "monthly" | "yearly";
+  goalId?: string;
 }
 
 interface TransactionModalProps {
@@ -25,6 +26,7 @@ interface TransactionModalProps {
   expenseCategories?: string[];
   incomeCategories?: string[];
   currencySymbol?: string;
+  goals?: { id: string; name: string }[];
 }
 
 const DEFAULT_EXPENSE_CATEGORIES = [
@@ -56,6 +58,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   expenseCategories = DEFAULT_EXPENSE_CATEGORIES,
   incomeCategories = DEFAULT_INCOME_CATEGORIES,
   currencySymbol = "$",
+  goals = [],
 }) => {
   const defaultFormData: TransactionFormData = {
     type: "expense",
@@ -362,6 +365,34 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               ))}
             </select>
           </div>
+
+          {/* Contribute to a savings goal (new transactions only) */}
+          {!isEditing && goals.length > 0 && (
+            <div>
+              <label htmlFor="goalId" className={labelClass}>
+                Contribute to savings goal (optional)
+              </label>
+              <select
+                id="goalId"
+                name="goalId"
+                value={formData.goalId || ""}
+                onChange={handleInputChange}
+                className={`w-full px-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg}`}
+              >
+                <option value="">None</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+              {formData.goalId && (
+                <p className={`mt-1 text-xs ${textSecondary}`}>
+                  This amount will also be added to the goal&apos;s progress.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Description */}
           <div className="floating-label-group">

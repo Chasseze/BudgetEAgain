@@ -8,7 +8,7 @@
 // 5. If you haven't added a web app, click "Add app" and select Web (</>)
 // 6. Copy the configuration values below
 
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -22,6 +22,7 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 // Validate configuration before initializing
@@ -53,8 +54,9 @@ const isConfigValid = validateConfig();
 
 if (isConfigValid) {
   try {
-    // Initialize Firebase
-    app = initializeApp(firebaseConfig);
+    // Initialize Firebase (reuse the existing app on hot-reload instead of
+    // throwing app/duplicate-app and leaving every handle null)
+    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
     // Initialize Firestore (database)
     db = getFirestore(app);
@@ -65,8 +67,9 @@ if (isConfigValid) {
     // Initialize Storage (for receipts/images)
     storage = getStorage(app);
 
-    // Initialize Analytics (only in browser and if supported)
-    if (typeof window !== 'undefined') {
+    // Initialize Analytics (only in browser, if supported, and only when a
+    // measurement ID is configured — otherwise gtag loads with id=undefined)
+    if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
       isSupported().then(supported => {
         if (supported && app) {
           analytics = getAnalytics(app);
