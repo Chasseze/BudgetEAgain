@@ -65,6 +65,7 @@ import RecurringBanner, {
   DueOccurrence,
 } from "./components/RecurringBanner";
 import SpendingNudge from "./components/SpendingNudge";
+import UpcomingExpensesCalendar from "./components/UpcomingExpensesCalendar";
 import BudgetHistoryCard, {
   BudgetSnapshot,
 } from "./components/BudgetHistoryCard";
@@ -1273,6 +1274,17 @@ const App: React.FC = () => {
               />
             </div>
 
+            {/* Upcoming recurring expenses — forward-looking planner */}
+            <div
+              className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 mt-6 transition-all duration-300 card-hover`}
+            >
+              <UpcomingExpensesCalendar
+                transactions={transactions}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+            </div>
+
             {/* Bottom row – 3 cards in a single horizontal row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
               {/* This period at a glance */}
@@ -1668,16 +1680,16 @@ const App: React.FC = () => {
                   currencySymbol={currencySymbol}
                 />
               </div>
-            </div>
 
-            {/* Spending Insights */}
-            <SpendingInsights
-              transactions={transactions}
-              categoryBudgets={categoryBudgets}
-              budgetLimit={budgetLimit}
-              currencySymbol={currencySymbol}
-              darkMode={darkMode}
-            />
+              {/* Spending Insights — shares the row with Budget History on desktop */}
+              <SpendingInsights
+                transactions={transactions}
+                categoryBudgets={categoryBudgets}
+                budgetLimit={budgetLimit}
+                currencySymbol={currencySymbol}
+                darkMode={darkMode}
+              />
+            </div>
           </div>
         )}
 

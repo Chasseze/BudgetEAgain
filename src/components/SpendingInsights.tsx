@@ -33,7 +33,11 @@ const SpendingInsights: React.FC<SpendingInsightsProps> = ({
   darkMode,
   currencySymbol,
 }) => {
-  const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
+  // Match the surrounding analytics cards — this now sits beside Budget History
+  const bgCard = darkMode
+    ? 'bg-gray-800/80 backdrop-blur-sm'
+    : 'bg-white/80 backdrop-blur-sm';
+  const cardClass = `${bgCard} rounded-2xl shadow-xl p-4 md:p-6 transition-all duration-300 card-hover`;
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
   const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
 
@@ -230,11 +234,11 @@ const SpendingInsights: React.FC<SpendingInsightsProps> = ({
 
   if (insights.length === 0) {
     return (
-      <div className={`${bgCard} rounded-2xl shadow-lg p-6`}>
-        <h3 className={`text-lg font-semibold mb-4 ${textPrimary}`}>
+      <div className={cardClass}>
+        <h3 className={`text-base font-semibold mb-4 ${textPrimary}`}>
           💡 Spending Insights
         </h3>
-        <p className={textSecondary}>
+        <p className={`text-sm ${textSecondary}`}>
           Add more transactions to see personalized spending insights and tips.
         </p>
       </div>
@@ -242,30 +246,37 @@ const SpendingInsights: React.FC<SpendingInsightsProps> = ({
   }
 
   return (
-    <div className={`${bgCard} rounded-2xl shadow-lg p-6`}>
-      <h3 className={`text-lg font-semibold mb-4 ${textPrimary}`}>
+    <div className={cardClass}>
+      <h3 className={`text-base font-semibold mb-4 ${textPrimary}`}>
         💡 Spending Insights
       </h3>
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {insights.slice(0, 5).map((insight, index) => {
           const styles = getInsightStyles(insight.type);
           return (
             <div
               key={index}
-              className={`p-4 rounded-xl border ${styles.bg} ${styles.border}`}
+              className={`p-3 rounded-xl border ${styles.bg} ${styles.border}`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-2.5">
                 <div className={`flex-shrink-0 ${styles.icon}`}>{insight.icon}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className={`font-medium ${styles.text}`}>{insight.title}</h4>
+                  {/* Wrap instead of squeezing when the column is narrow */}
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                    <h4 className={`text-sm font-medium ${styles.text}`}>
+                      {insight.title}
+                    </h4>
                     {insight.value && (
-                      <span className={`text-sm font-semibold ${styles.text}`}>
+                      <span
+                        className={`text-sm font-semibold whitespace-nowrap ${styles.text}`}
+                      >
                         {insight.value}
                       </span>
                     )}
                   </div>
-                  <p className={`text-sm mt-1 ${textSecondary}`}>{insight.description}</p>
+                  <p className={`text-xs mt-1 ${textSecondary}`}>
+                    {insight.description}
+                  </p>
                 </div>
               </div>
             </div>

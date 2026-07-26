@@ -1,25 +1,14 @@
 import React, { useMemo, useState } from "react";
 import { RefreshCw, X, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  computeDueOccurrences,
+  Occurrence,
+  RecurringTransaction,
+} from "../utils/recurring";
 
-interface Transaction {
-  id: string;
-  type: "income" | "expense";
-  amount: number;
-  category: string;
-  description: string;
-  date: string;
-  isRecurring?: boolean;
-  recurringFrequency?: "weekly" | "monthly" | "yearly";
-}
+type Transaction = RecurringTransaction & { id: string };
 
-export interface DueOccurrence {
-  type: "income" | "expense";
-  amount: number;
-  category: string;
-  description: string;
-  date: string;
-  recurringFrequency: "weekly" | "monthly" | "yearly";
-}
+export type DueOccurrence = Occurrence;
 
 interface RecurringBannerProps {
   transactions: Transaction[];
@@ -27,73 +16,6 @@ interface RecurringBannerProps {
   currencySymbol: string;
   onPostAll: (due: DueOccurrence[]) => Promise<void>;
 }
-
-const toDateString = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
-
-// Step a YYYY-MM-DD date forward by one frequency interval
-const nextDate = (
-  dateStr: string,
-  freq: "weekly" | "monthly" | "yearly",
-): string => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (freq === "weekly") {
-    const dt = new Date(y, m - 1, d + 7);
-    return toDateString(dt);
-  }
-  if (freq === "monthly") {
-    // Clamp the day so e.g. Jan 31 → Feb 28 instead of rolling into March
-    const lastDayOfNext = new Date(y, m + 1, 0).getDate();
-    const dt = new Date(y, m, Math.min(d, lastDayOfNext));
-    return toDateString(dt);
-  }
-  const dt = new Date(y + 1, m - 1, d);
-  return toDateString(dt);
-};
-
-/**
- * Detect recurring transaction series and compute occurrences that are due:
- * for each unique (type, category, description, amount, frequency) series,
- * step forward from its most recent posted date and collect every date up to
- * today that hasn't been posted yet.
- */
-export const computeDueOccurrences = (
-  transactions: Transaction[],
-): DueOccurrence[] => {
-  const today = toDateString(new Date());
-  const series = new Map<string, Transaction>();
-
-  for (const t of transactions) {
-    if (!t.isRecurring || !t.recurringFrequency) continue;
-    const key = `${t.type}|${t.category}|${t.description}|${t.amount}|${t.recurringFrequency}`;
-    const existing = series.get(key);
-    if (!existing || t.date > existing.date) series.set(key, t);
-  }
-
-  const due: DueOccurrence[] = [];
-  series.forEach((latest) => {
-    let cursor = latest.date;
-    // Cap per-series backfill so an old series doesn't flood the list
-    for (let i = 0; i < 12; i++) {
-      cursor = nextDate(cursor, latest.recurringFrequency!);
-      if (cursor > today) break;
-      due.push({
-        type: latest.type,
-        amount: latest.amount,
-        category: latest.category,
-        description: latest.description,
-        date: cursor,
-        recurringFrequency: latest.recurringFrequency!,
-      });
-    }
-  });
-
-  return due.sort((a, b) => a.date.localeCompare(b.date));
-};
 
 const RecurringBanner: React.FC<RecurringBannerProps> = ({
   transactions,
