@@ -339,7 +339,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 /* Card hover effects */
 .card-hover {
-    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+    @apply transition-shadow duration-200 hover:shadow-lg;
 }
 
 /* Hero glow effect */
@@ -351,7 +351,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 /* Button hover effects */
 .btn-hover {
-    @apply transition-all duration-200 hover:shadow-lg hover:scale-105 active:scale-95;
+    @apply transition-all duration-200 hover:shadow-md active:scale-[0.98];
 }
 
 /* Gradient border effect */

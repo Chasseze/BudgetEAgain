@@ -1,6 +1,7 @@
 import React from "react";
 import { Trash2, Edit2, Eye, RefreshCw, Inbox } from "lucide-react";
 import CategoryBadge from "./CategoryBadge";
+import { formatDate, parseDateOnly } from "../utils/helpers";
 
 interface Transaction {
   id: string;
@@ -32,16 +33,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
   searchQuery = "",
   currencySymbol = "$",
 }) => {
-  // Format date for display
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
   // Format amount
   const formatAmount = (amount: number): string => {
     return amount.toLocaleString("en-US", {
@@ -89,7 +80,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
   // Sort dates descending
   const sortedDates = Object.keys(groupedTransactions).sort(
-    (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+    (a, b) => parseDateOnly(b).getTime() - parseDateOnly(a).getTime(),
   );
 
   if (transactions.length === 0) {

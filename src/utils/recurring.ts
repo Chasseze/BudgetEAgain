@@ -16,6 +16,8 @@ export interface RecurringTransaction {
   date: string;
   isRecurring?: boolean;
   recurringFrequency?: Frequency;
+  recurringSeriesId?: string | null;
+  recurrenceEndDate?: string | null;
 }
 
 export interface Occurrence {
@@ -25,6 +27,8 @@ export interface Occurrence {
   description: string;
   date: string;
   recurringFrequency: Frequency;
+  recurringSeriesId?: string | null;
+  recurrenceEndDate?: string | null;
 }
 
 export const toDateString = (d: Date): string => {
@@ -87,7 +91,10 @@ export const getRecurringSeries = (
   const series = new Map<string, RecurringTransaction>();
   for (const t of transactions) {
     if (!t.isRecurring || !t.recurringFrequency) continue;
-    const key = `${t.type}|${t.category}|${t.description}|${t.amount}|${t.recurringFrequency}`;
+    // New records have a stable identifier, so an amount/description edit can
+    // update future occurrences without creating a second series. The legacy
+    // composite key preserves existing users' schedules.
+    const key = t.recurringSeriesId || `${t.type}|${t.category}|${t.description}|${t.amount}|${t.recurringFrequency}`;
     const existing = series.get(key);
     if (!existing || t.date > existing.date) series.set(key, t);
   }
@@ -104,6 +111,8 @@ const toOccurrence = (
   description: anchor.description,
   date,
   recurringFrequency: anchor.recurringFrequency!,
+  recurringSeriesId: anchor.recurringSeriesId,
+  recurrenceEndDate: anchor.recurrenceEndDate,
 });
 
 /** Occurrences that should already have been posted (up to and including today). */
@@ -113,12 +122,14 @@ export const computeDueOccurrences = (
   const today = todayString();
   const due: Occurrence[] = [];
   for (const anchor of getRecurringSeries(transactions)) {
+    const end = anchor.recurrenceEndDate || today;
+    if (end < todayString()) continue;
     // Cap the backfill so a long-dormant series doesn't flood the list
     const dates = generateOccurrenceDates(
       anchor.date,
       anchor.recurringFrequency!,
       "0000-01-01",
-      today,
+      end < today ? end : today,
       12,
     );
     dates.forEach((d) => due.push(toOccurrence(anchor, d)));
@@ -136,11 +147,13 @@ export const projectUpcoming = (
   const start = windowStart > today ? windowStart : today;
   const upcoming: Occurrence[] = [];
   for (const anchor of getRecurringSeries(transactions)) {
+    const end = anchor.recurrenceEndDate || windowEnd;
+    if (end < start) continue;
     const dates = generateOccurrenceDates(
       anchor.date,
       anchor.recurringFrequency!,
       start,
-      windowEnd,
+      end < windowEnd ? end : windowEnd,
     );
     dates
       .filter((d) => d > today)

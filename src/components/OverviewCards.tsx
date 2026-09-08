@@ -65,7 +65,7 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({
       {/* Top row — 4 cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         {/* Income Card */}
-        <div className="bg-gradient-to-br from-green-400 to-green-600 rounded-xl shadow-lg p-4 md:p-6 text-white transform transition-transform hover:scale-105">
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl shadow-md p-4 md:p-6 text-white transition-shadow hover:shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 bg-white/20 rounded-lg">
               <TrendingUp className="w-5 h-5 md:w-6 md:h-6" />
@@ -78,7 +78,7 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({
         </div>
 
         {/* Expenses Card */}
-        <div className="bg-gradient-to-br from-red-400 to-red-600 rounded-xl shadow-lg p-4 md:p-6 text-white transform transition-transform hover:scale-105">
+        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-xl shadow-md p-4 md:p-6 text-white transition-shadow hover:shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 bg-white/20 rounded-lg">
               <TrendingDown className="w-5 h-5 md:w-6 md:h-6" />
@@ -96,7 +96,7 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({
             remaining >= 0
               ? 'from-blue-400 to-blue-600'
               : 'from-orange-400 to-orange-600'
-          } rounded-xl shadow-lg p-4 md:p-6 text-white transform transition-transform hover:scale-105`}
+          } rounded-xl shadow-md p-4 md:p-6 text-white transition-shadow hover:shadow-lg`}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 bg-white/20 rounded-lg">
@@ -117,7 +117,7 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({
               : budgetUsedPercent > 80
               ? 'from-yellow-400 to-yellow-600'
               : 'from-purple-400 to-purple-600'
-          } rounded-xl shadow-lg p-4 md:p-6 text-white transform transition-transform hover:scale-105`}
+          } rounded-xl shadow-md p-4 md:p-6 text-white transition-shadow hover:shadow-lg`}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 bg-white/20 rounded-lg">
@@ -146,7 +146,7 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({
             : savingsRate > 0
             ? 'from-indigo-400 to-blue-500'
             : 'from-gray-500 to-gray-600'
-        } rounded-xl shadow-lg px-5 py-3 text-white flex items-center justify-between`}
+        } rounded-xl shadow-md px-5 py-3 text-white flex items-center justify-between`}
       >
         <div className="flex items-center gap-3">
           <div className="p-2 bg-white/20 rounded-lg">

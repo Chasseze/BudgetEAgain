@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Upload, X, FileText, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
-import { parseCSV } from '../utils/helpers';
+import { parseCSV, toDateInputValue } from '../utils/helpers';
 
 interface ImportedRow {
   date: string;
@@ -13,7 +13,7 @@ interface ImportedRow {
 interface CSVImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (rows: ImportedRow[]) => Promise<void>;
+  onImport: (rows: ImportedRow[]) => Promise<{ imported: number; skipped: number }>;
   darkMode: boolean;
   expenseCategories: string[];
   incomeCategories: string[];
@@ -47,6 +47,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
+  const [skippedCount, setSkippedCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
   const bgModal = darkMode ? 'bg-gray-800' : 'bg-white';
@@ -128,7 +129,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
         let date = rawDate;
         const d = new Date(rawDate);
         if (!isNaN(d.getTime())) {
-          date = d.toISOString().split('T')[0];
+          date = toDateInputValue(d);
         }
 
         // Normalise amount
@@ -154,8 +155,9 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
     setImporting(true);
     setError(null);
     try {
-      await onImport(parsedRows);
-      setImportedCount(parsedRows.length);
+      const result = await onImport(parsedRows);
+      setImportedCount(result.imported);
+      setSkippedCount(result.skipped);
       setStep('done');
     } catch (err) {
       setError('Import failed. Please try again.');
@@ -171,6 +173,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
     setMapping([]);
     setError(null);
     setImporting(false);
+    setSkippedCount(0);
     onClose();
   };
 
@@ -390,7 +393,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
               <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
               <h3 className={`text-xl font-bold ${textPrimary} mb-2`}>Import complete!</h3>
               <p className={`text-sm ${textSecondary} mb-6`}>
-                Successfully imported <strong>{importedCount}</strong> transaction{importedCount !== 1 ? 's' : ''}.
+                Successfully imported <strong>{importedCount}</strong> transaction{importedCount !== 1 ? 's' : ''}{skippedCount ? <> and skipped {skippedCount} duplicate{skippedCount !== 1 ? 's' : ''}</> : null}.
               </p>
               <button
                 onClick={handleClose}

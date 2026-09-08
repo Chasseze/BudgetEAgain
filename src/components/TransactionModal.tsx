@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { X, Camera, Upload, RefreshCw, Loader2 } from "lucide-react";
 import { storage } from "../config/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { toDateInputValue } from "../utils/helpers";
 
 interface TransactionFormData {
   type: "income" | "expense";
@@ -10,8 +11,11 @@ interface TransactionFormData {
   description: string;
   date: string;
   receipt: string | null;
+  receiptPath?: string | null;
   isRecurring: boolean;
   recurringFrequency?: "weekly" | "monthly" | "yearly";
+  recurringSeriesId?: string | null;
+  recurrenceEndDate?: string | null;
   goalId?: string;
 }
 
@@ -65,8 +69,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     amount: "",
     category: "Food & Dining",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: toDateInputValue(),
     receipt: null,
+    receiptPath: null,
     isRecurring: false,
     recurringFrequency: "monthly",
   };
@@ -182,7 +187,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
         await uploadBytes(storageRef, file);
         const downloadURL = await getDownloadURL(storageRef);
 
-        setFormData((prev) => ({ ...prev, receipt: downloadURL }));
+        setFormData((prev) => ({ ...prev, receipt: downloadURL, receiptPath: fileName }));
         setErrors((prev) => ({ ...prev, receipt: "" }));
       } catch (error) {
         console.error("Error uploading receipt:", error);
@@ -201,7 +206,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   };
 
   const removeReceipt = () => {
-    setFormData((prev) => ({ ...prev, receipt: null }));
+    setFormData((prev) => ({ ...prev, receipt: null, receiptPath: null }));
     setReceiptPreview(null);
   };
 
@@ -367,7 +372,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           {/* Contribute to a savings goal (new transactions only) */}
-          {!isEditing && goals.length > 0 && (
+          {!isEditing && formData.type === "income" && goals.length > 0 && (
             <div>
               <label htmlFor="goalId" className={labelClass}>
                 Contribute to savings goal (optional)
@@ -465,21 +470,42 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
           {/* Recurring Frequency */}
           {formData.isRecurring && (
-            <div>
-              <label htmlFor="recurringFrequency" className={labelClass}>
-                Frequency
-              </label>
-              <select
-                id="recurringFrequency"
-                name="recurringFrequency"
-                value={formData.recurringFrequency}
-                onChange={handleInputChange}
-                className={`w-full px-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg}`}
-              >
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="recurringFrequency" className={labelClass}>
+                  Frequency
+                </label>
+                <select
+                  id="recurringFrequency"
+                  name="recurringFrequency"
+                  value={formData.recurringFrequency}
+                  onChange={handleInputChange}
+                  className={`w-full px-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg}`}
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="recurrenceEndDate" className={labelClass}>
+                  Ends (optional)
+                </label>
+                <input
+                  id="recurrenceEndDate"
+                  name="recurrenceEndDate"
+                  type="date"
+                  min={formData.date}
+                  value={formData.recurrenceEndDate || ""}
+                  onChange={handleInputChange}
+                  className={`w-full px-4 py-3 rounded-xl border-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${inputBg}`}
+                />
+              </div>
+              {isEditing && (
+                <p className={`sm:col-span-2 text-xs ${textSecondary}`}>
+                  Updating the latest occurrence updates this recurring series going forward. Turn Recurring off to pause it.
+                </p>
+              )}
             </div>
           )}
 

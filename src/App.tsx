@@ -72,7 +72,15 @@ import BudgetHistoryCard, {
 import Auth from "./components/Auth";
 
 // Utils
-import { getDateRange, exportToCSV } from "./utils/helpers";
+import {
+  fromMinorUnits,
+  getDateRange,
+  normaliseMoney,
+  parseDateOnly,
+  toDateInputValue,
+  toMinorUnits,
+  exportToCSV,
+} from "./utils/helpers";
 
 // Constants
 import {
@@ -86,7 +94,7 @@ import {
   CURRENCIES,
   DEFAULT_CURRENCY,
 } from "./config/constants";
-import { db, app } from "./config/firebase";
+import { db, app, storage } from "./config/firebase";
 import {
   collection,
   addDoc,
@@ -102,6 +110,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
+import { deleteObject, listAll, ref as storageRef } from "firebase/storage";
 
 // Types
 interface Transaction {
@@ -112,8 +121,11 @@ interface Transaction {
   description: string;
   date: string;
   receipt: string | null;
+  receiptPath?: string | null;
   isRecurring?: boolean;
   recurringFrequency?: "weekly" | "monthly" | "yearly";
+  recurringSeriesId?: string | null;
+  recurrenceEndDate?: string | null;
   goalId?: string | null;
 }
 
@@ -133,9 +145,12 @@ interface TransactionFormData {
   description: string;
   date: string;
   receipt: string | null;
+  receiptPath?: string | null;
   isRecurring: boolean;
   recurringFrequency?: "weekly" | "monthly" | "yearly";
   goalId?: string;
+  recurringSeriesId?: string | null;
+  recurrenceEndDate?: string | null;
 }
 
 interface ToastData {
@@ -160,12 +175,55 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
   customIncomeCategories: [],
 };
 
+const defaultCategoryBudgets = (): Record<string, number> =>
+  Object.fromEntries(
+    EXPENSE_CATEGORIES.map((cat) => [cat, CATEGORY_CONFIG[cat]?.budget || 200]),
+  );
+
+const localId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const toStoredTransaction = (tx: Omit<Transaction, "id">) => {
+  const { amount, ...rest } = tx;
+  return {
+  ...rest,
+  // amountCents is the canonical persisted amount. `amount` is read only as
+  // a legacy fallback for documents saved by previous versions.
+  amountCents: toMinorUnits(amount),
+  };
+};
+
 const App: React.FC = () => {
   // Persisted State
   const [darkMode, setDarkMode] = useLocalStorage<boolean>(
     STORAGE_KEYS.DARK_MODE,
     false,
   );
+  // A fully local mode keeps the app useful when Firebase is intentionally
+  // unconfigured (or when someone wants a private, single-device budget).
+  const [localTransactions, setLocalTransactions] = useLocalStorage<Transaction[]>(
+    STORAGE_KEYS.TRANSACTIONS,
+    [],
+  );
+  const [localGoals, setLocalGoals] = useLocalStorage<SavingsGoal[]>(
+    STORAGE_KEYS.SAVINGS_GOALS,
+    [],
+  );
+  const [localBudget, setLocalBudget] = useLocalStorage(
+    STORAGE_KEYS.BUDGET_LIMIT,
+    DEFAULT_BUDGET_LIMIT,
+  );
+  const [localCategoryBudgets, setLocalCategoryBudgets] = useLocalStorage<Record<string, number>>(
+    STORAGE_KEYS.CATEGORY_BUDGETS,
+    defaultCategoryBudgets(),
+  );
+  const [localSettings, setLocalSettings] = useLocalStorage<UserSettings>(
+    "budget_tracker_preferences",
+    DEFAULT_USER_SETTINGS,
+  );
+  const isLocalMode = !db || !app;
 
   // UI State
   const [activeTab, setActiveTab] = useState("home");
@@ -193,7 +251,7 @@ const App: React.FC = () => {
     name: "",
     targetAmount: "",
     currentAmount: "",
-    deadline: new Date().toISOString().split("T")[0],
+    deadline: toDateInputValue(),
     color: GOAL_COLORS[0],
   });
 
@@ -225,6 +283,11 @@ const App: React.FC = () => {
 
   // User-scoped transactions - only load when user is authenticated
   React.useEffect(() => {
+    if (isLocalMode) {
+      setTransactions(localTransactions);
+      setIsDataLoading(false);
+      return;
+    }
     if (!db || !user) {
       setTransactions([]);
       setIsDataLoading(false);
@@ -241,13 +304,20 @@ const App: React.FC = () => {
         return {
           id: docSnap.id,
           type: data.type,
-          amount: data.amount,
+          amount: fromMinorUnits(
+            Number.isInteger(data.amountCents)
+              ? data.amountCents
+              : toMinorUnits(Number(data.amount) || 0),
+          ),
           category: data.category,
           description: data.description,
           date: data.date,
           receipt: data.receipt ?? null,
+          receiptPath: data.receiptPath ?? null,
           isRecurring: data.isRecurring,
           recurringFrequency: data.recurringFrequency,
+          recurringSeriesId: data.recurringSeriesId ?? null,
+          recurrenceEndDate: data.recurrenceEndDate ?? null,
           goalId: data.goalId ?? null,
         };
       });
@@ -255,22 +325,38 @@ const App: React.FC = () => {
       setIsDataLoading(false);
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isLocalMode, localTransactions]);
 
   const addTransaction = async (tx: Omit<Transaction, "id">) => {
+    if (isLocalMode) {
+      setLocalTransactions((current) => [{ ...tx, id: localId() }, ...current]);
+      return;
+    }
     if (!db || !user) return;
-    await addDoc(collection(db, `users/${user.uid}/transactions`), tx);
+    await addDoc(collection(db, `users/${user.uid}/transactions`), toStoredTransaction(tx));
   };
 
   const updateTransaction = async (
     id: string | number,
     tx: Partial<Transaction>,
   ) => {
+    if (isLocalMode) {
+      setLocalTransactions((current) => current.map((item) => item.id === String(id) ? { ...item, ...tx } : item));
+      return;
+    }
     if (!db || !user) return;
-    await updateDoc(doc(db, `users/${user.uid}/transactions`, String(id)), tx);
+    const { amount, ...rest } = tx;
+    await updateDoc(doc(db, `users/${user.uid}/transactions`, String(id)), {
+      ...rest,
+      ...(amount === undefined ? {} : { amountCents: toMinorUnits(amount) }),
+    });
   };
 
   const deleteTransaction = async (id: string | number) => {
+    if (isLocalMode) {
+      setLocalTransactions((current) => current.filter((item) => item.id !== String(id)));
+      return;
+    }
     if (!db || !user) return;
     await deleteDoc(doc(db, `users/${user.uid}/transactions`, String(id)));
   };
@@ -281,6 +367,11 @@ const App: React.FC = () => {
 
   // User-scoped savings goals
   React.useEffect(() => {
+    if (isLocalMode) {
+      setSavingsGoals(localGoals);
+      setIsGoalsLoading(false);
+      return;
+    }
     if (!db || !user) {
       setSavingsGoals([]);
       setIsGoalsLoading(false);
@@ -304,22 +395,34 @@ const App: React.FC = () => {
       setIsGoalsLoading(false);
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isLocalMode, localGoals]);
 
   // Function to add a goal to Firestore
   const addGoal = async (goal: Omit<SavingsGoal, "id">) => {
+    if (isLocalMode) {
+      setLocalGoals((current) => [...current, { ...goal, id: localId() }]);
+      return;
+    }
     if (!db || !user) return;
     await addDoc(collection(db, `users/${user.uid}/goals`), goal);
   };
 
   // Function to update a goal in Firestore
   const updateGoal = async (id: string, goal: Partial<SavingsGoal>) => {
+    if (isLocalMode) {
+      setLocalGoals((current) => current.map((item) => item.id === id ? { ...item, ...goal } : item));
+      return;
+    }
     if (!db || !user) return;
     await updateDoc(doc(db, `users/${user.uid}/goals`, id), goal);
   };
 
   // Function to delete a goal from Firestore
   const deleteGoal = async (id: string) => {
+    if (isLocalMode) {
+      setLocalGoals((current) => current.filter((item) => item.id !== id));
+      return;
+    }
     if (!db || !user) return;
     await deleteDoc(doc(db, `users/${user.uid}/goals`, id));
   };
@@ -329,26 +432,19 @@ const App: React.FC = () => {
   const [categoryBudgets, setCategoryBudgets] = useState<
     Record<string, number>
   >(
-    Object.fromEntries(
-      EXPENSE_CATEGORIES.map((cat) => [
-        cat,
-        CATEGORY_CONFIG[cat]?.budget || 200,
-      ]),
-    ),
+    defaultCategoryBudgets(),
   );
 
   // User-scoped budgets
   React.useEffect(() => {
+    if (isLocalMode) {
+      setBudgetLimit(localBudget);
+      setCategoryBudgets(localCategoryBudgets);
+      return;
+    }
     if (!db || !user) {
       setBudgetLimit(DEFAULT_BUDGET_LIMIT);
-      setCategoryBudgets(
-        Object.fromEntries(
-          EXPENSE_CATEGORIES.map((cat) => [
-            cat,
-            CATEGORY_CONFIG[cat]?.budget || 200,
-          ]),
-        ),
-      );
+      setCategoryBudgets(defaultCategoryBudgets());
       return;
     }
     const budgetDocRef = doc(db, `users/${user.uid}/settings`, "budgets");
@@ -360,7 +456,7 @@ const App: React.FC = () => {
       }
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isLocalMode, localBudget, localCategoryBudgets]);
 
   // Function to update budgets in Firestore
   const updateBudgets = async (
@@ -372,6 +468,11 @@ const App: React.FC = () => {
     setCategoryBudgets(newCategoryBudgets);
 
     // Persist to Firestore
+    if (isLocalMode) {
+      setLocalBudget(newBudgetLimit);
+      setLocalCategoryBudgets(newCategoryBudgets);
+      return;
+    }
     if (!db || !user) return;
     const budgetDocRef = doc(db, `users/${user.uid}/settings`, "budgets");
     try {
@@ -393,7 +494,7 @@ const App: React.FC = () => {
   const [budgetSnapshots, setBudgetSnapshots] = useState<BudgetSnapshot[]>([]);
 
   React.useEffect(() => {
-    if (!db || !user) {
+    if (isLocalMode || !db || !user) {
       setBudgetSnapshots([]);
       return;
     }
@@ -409,13 +510,13 @@ const App: React.FC = () => {
       },
     );
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isLocalMode]);
 
   // Once per session: snapshot last month's budget so history stays accurate
   // even after the user changes their budget later
   const snapshotWritten = React.useRef(false);
   React.useEffect(() => {
-    if (!db || !user || isDataLoading || snapshotWritten.current) return;
+    if (isLocalMode || !db || !user || isDataLoading || snapshotWritten.current) return;
     const d = new Date();
     const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
     const monthKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
@@ -434,10 +535,14 @@ const App: React.FC = () => {
         }
       })
       .catch((err) => console.error("Budget snapshot failed:", err));
-  }, [user, isDataLoading, transactions, budgetLimit, categoryBudgets]);
+  }, [user, isLocalMode, isDataLoading, transactions, budgetLimit, categoryBudgets]);
 
   // User-scoped settings (currency, email reports, custom categories)
   React.useEffect(() => {
+    if (isLocalMode) {
+      setUserSettings(localSettings);
+      return;
+    }
     if (!db || !user) {
       setUserSettings(DEFAULT_USER_SETTINGS);
       return;
@@ -456,10 +561,14 @@ const App: React.FC = () => {
       }
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isLocalMode, localSettings]);
 
   // Function to update user settings in Firestore
   const updateUserSettings = async (newSettings: Partial<UserSettings>) => {
+    if (isLocalMode) {
+      setLocalSettings((current) => ({ ...current, ...newSettings }));
+      return;
+    }
     if (!db || !user) return;
     const settingsDocRef = doc(db, `users/${user.uid}/settings`, "preferences");
     await setDoc(settingsDocRef, newSettings, { merge: true });
@@ -489,13 +598,17 @@ const App: React.FC = () => {
 
   // Auth effect
   React.useEffect(() => {
+    if (isLocalMode || !app) {
+      setAuthChecked(true);
+      return;
+    }
     const auth = getAuth(app!);
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       setAuthChecked(true);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isLocalMode]);
 
   // Calculations — memoized so filter/search/tab changes don't recompute everything
   const { start: filterStart, end: filterEnd } = useMemo(
@@ -506,7 +619,7 @@ const App: React.FC = () => {
   const filteredByDate = useMemo(
     () =>
       transactions.filter((t) => {
-        const transactionDate = new Date(t.date);
+        const transactionDate = parseDateOnly(t.date);
         return transactionDate >= filterStart && transactionDate <= filterEnd;
       }),
     [transactions, filterStart, filterEnd],
@@ -569,7 +682,7 @@ const App: React.FC = () => {
           return categoryMatch && typeMatch && searchMatch;
         })
         .sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          (a, b) => parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime(),
         ),
     [filteredByDate, filterCategory, filterType, searchQuery],
   );
@@ -631,22 +744,48 @@ const App: React.FC = () => {
     );
   }
 
-  if (!user) {
+  if (!user && !isLocalMode) {
     return <Auth onAuth={setUser} />;
   }
 
   // Handlers
+  const deleteReceipt = async (path?: string | null) => {
+    if (!path || !storage) return;
+    try {
+      await deleteObject(storageRef(storage, path));
+    } catch (error) {
+      // Deletion is best-effort for legacy download URLs that do not include a path.
+      console.warn("Unable to delete receipt:", error);
+    }
+  };
+
+  const deleteReceiptFolder = async (path: string): Promise<void> => {
+    if (!storage) return;
+    const folder = storageRef(storage, path);
+    const entries = await listAll(folder);
+    await Promise.all(entries.items.map((item) => deleteObject(item)));
+    await Promise.all(entries.prefixes.map((prefix) => deleteReceiptFolder(prefix.fullPath)));
+  };
   const handleAddTransaction = async (formData: TransactionFormData) => {
     if (editingTransaction) {
+      const nextAmount = normaliseMoney(parseFloat(formData.amount));
+      const previousReceiptPath = editingTransaction.receiptPath;
       await updateTransaction(editingTransaction.id, {
         ...formData,
-        amount: parseFloat(formData.amount),
+        amount: nextAmount,
+        goalId: editingTransaction.goalId ?? null,
+        recurringSeriesId: formData.isRecurring
+          ? editingTransaction.recurringSeriesId || localId()
+          : null,
       });
+      if (previousReceiptPath && previousReceiptPath !== formData.receiptPath) {
+        await deleteReceipt(previousReceiptPath);
+      }
       showToast("Transaction updated!");
       setEditingTransaction(null);
     } else {
-      const amount = Number(formData.amount);
-      const goalId = formData.goalId || null;
+      const amount = normaliseMoney(Number(formData.amount));
+      const goalId = formData.type === "income" ? formData.goalId || null : null;
       const newTransaction = {
         type: formData.type,
         amount,
@@ -654,8 +793,11 @@ const App: React.FC = () => {
         description: formData.description,
         date: formData.date,
         receipt: formData.receipt,
+        receiptPath: formData.receiptPath ?? null,
         isRecurring: formData.isRecurring,
         recurringFrequency: formData.recurringFrequency,
+        recurringSeriesId: formData.isRecurring ? localId() : null,
+        recurrenceEndDate: formData.isRecurring ? formData.recurrenceEndDate || null : null,
         goalId,
       };
       await addTransaction(newTransaction);
@@ -679,19 +821,34 @@ const App: React.FC = () => {
 
   // Post all due recurring occurrences in one batch
   const handlePostRecurring = async (due: DueOccurrence[]) => {
-    if (!db || !user || due.length === 0) return;
+    if (due.length === 0) return;
+    if (isLocalMode) {
+      await Promise.all(due.map((d) => addTransaction({
+        ...d,
+        receipt: null,
+        receiptPath: null,
+        isRecurring: true,
+        goalId: null,
+      })));
+      showToast(`Added ${due.length} recurring transaction${due.length !== 1 ? "s" : ""}!`);
+      return;
+    }
+    if (!db || !user) return;
     const batch = writeBatch(db);
     due.forEach((d) => {
       const ref = doc(collection(db!, `users/${user.uid}/transactions`));
       batch.set(ref, {
         type: d.type,
-        amount: d.amount,
+        amountCents: toMinorUnits(d.amount),
         category: d.category,
         description: d.description,
         date: d.date,
         receipt: null,
+        receiptPath: null,
         isRecurring: true,
         recurringFrequency: d.recurringFrequency,
+        recurringSeriesId: d.recurringSeriesId ?? null,
+        recurrenceEndDate: d.recurrenceEndDate ?? null,
         goalId: null,
       });
     });
@@ -711,10 +868,19 @@ const App: React.FC = () => {
     if (!transaction) return;
 
     await deleteTransaction(id);
+    let restored = false;
+    // Preserve the attachment while Undo is visible; otherwise a restored
+    // transaction would point at a deleted receipt.
+    const cleanupTimer = window.setTimeout(() => {
+      if (!restored) void deleteReceipt(transaction.receiptPath);
+    }, 5_100);
 
     // Offer undo ΓÇö re-add the transaction if user taps Undo before toast dismisses
     showToast("Transaction deleted", async () => {
-      const { id: _removed, ...restoreData } = transaction;
+      restored = true;
+      window.clearTimeout(cleanupTimer);
+      const { id: removedId, ...restoreData } = transaction;
+      void removedId;
       await addTransaction(restoreData);
     });
   };
@@ -753,7 +919,7 @@ const App: React.FC = () => {
       name: "",
       targetAmount: "",
       currentAmount: "",
-      deadline: new Date().toISOString().split("T")[0],
+      deadline: toDateInputValue(),
       color: GOAL_COLORS[0],
     });
     setShowGoalModal(false);
@@ -801,21 +967,45 @@ const App: React.FC = () => {
       description: string;
       amount: number;
     }[],
-  ) => {
-    if (!db || !user) return;
+  ): Promise<{ imported: number; skipped: number }> => {
+    const keyOf = (row: Pick<Transaction, "date" | "type" | "category" | "description" | "amount">) =>
+      `${row.date}|${row.type}|${row.category}|${row.description.trim().toLowerCase()}|${toMinorUnits(row.amount)}`;
+    const existing = new Set(transactions.map(keyOf));
+    const uniqueRows = rows
+      .map((row) => ({ ...row, amount: normaliseMoney(row.amount) }))
+      .filter((row) => {
+        const key = keyOf(row);
+        if (existing.has(key)) return false;
+        existing.add(key);
+        return true;
+      });
+    const skipped = rows.length - uniqueRows.length;
+    if (isLocalMode) {
+      await Promise.all(uniqueRows.map((row) => addTransaction({
+        ...row,
+        receipt: null,
+        receiptPath: null,
+        isRecurring: false,
+        goalId: null,
+      })));
+      showToast(`Imported ${uniqueRows.length} transaction${uniqueRows.length !== 1 ? "s" : ""}${skipped ? `; skipped ${skipped} duplicate${skipped !== 1 ? "s" : ""}` : ""}.`);
+      return { imported: uniqueRows.length, skipped };
+    }
+    if (!db || !user) return { imported: 0, skipped: rows.length };
     // Firestore batches cap at 500 writes — chunk to stay under it
     const CHUNK = 450;
-    for (let i = 0; i < rows.length; i += CHUNK) {
+    for (let i = 0; i < uniqueRows.length; i += CHUNK) {
       const batch = writeBatch(db);
-      rows.slice(i, i + CHUNK).forEach((row) => {
+      uniqueRows.slice(i, i + CHUNK).forEach((row) => {
         const ref = doc(collection(db!, `users/${user.uid}/transactions`));
-        batch.set(ref, { ...row, receipt: null, isRecurring: false });
+        batch.set(ref, toStoredTransaction({ ...row, receipt: null, receiptPath: null, isRecurring: false, goalId: null }));
       });
       await batch.commit();
     }
     showToast(
-      `Imported ${rows.length} transaction${rows.length !== 1 ? "s" : ""}!`,
+      `Imported ${uniqueRows.length} transaction${uniqueRows.length !== 1 ? "s" : ""}${skipped ? `; skipped ${skipped} duplicate${skipped !== 1 ? "s" : ""}` : ""}.`,
     );
+    return { imported: uniqueRows.length, skipped };
   };
 
   const openQuickAdd = (type: "income" | "expense") => {
@@ -825,40 +1015,48 @@ const App: React.FC = () => {
   };
 
   const handleClearData = async () => {
+    if (isLocalMode) {
+      setLocalTransactions([]);
+      setLocalGoals([]);
+      setLocalBudget(DEFAULT_BUDGET_LIMIT);
+      setLocalCategoryBudgets(defaultCategoryBudgets());
+      setLocalSettings(DEFAULT_USER_SETTINGS);
+      setBudgetSnapshots([]);
+      return;
+    }
     if (!db || !user) return;
-    const batch = writeBatch(db);
 
-    const txSnap = await getDocs(
-      collection(db, `users/${user.uid}/transactions`),
-    );
-    txSnap.forEach((d) => batch.delete(d.ref));
-
-    const goalSnap = await getDocs(collection(db, `users/${user.uid}/goals`));
-    goalSnap.forEach((d) => batch.delete(d.ref));
-
-    batch.delete(doc(db, `users/${user.uid}/settings`, "budgets"));
-    batch.delete(doc(db, `users/${user.uid}/settings`, "preferences"));
-
-    await batch.commit();
+    const [txSnap, goalSnap, historySnap] = await Promise.all([
+      getDocs(collection(db, `users/${user.uid}/transactions`)),
+      getDocs(collection(db, `users/${user.uid}/goals`)),
+      getDocs(collection(db, `users/${user.uid}/budgetHistory`)),
+    ]);
+    const refs = [
+      ...txSnap.docs.map((item) => item.ref),
+      ...goalSnap.docs.map((item) => item.ref),
+      ...historySnap.docs.map((item) => item.ref),
+      doc(db, `users/${user.uid}/settings`, "budgets"),
+      doc(db, `users/${user.uid}/settings`, "preferences"),
+    ];
+    for (let index = 0; index < refs.length; index += 450) {
+      const batch = writeBatch(db);
+      refs.slice(index, index + 450).forEach((item) => batch.delete(item));
+      await batch.commit();
+    }
+    await deleteReceiptFolder(`receipts/${user.uid}`);
 
     setBudgetLimit(DEFAULT_BUDGET_LIMIT);
-    setCategoryBudgets(
-      Object.fromEntries(
-        EXPENSE_CATEGORIES.map((cat) => [
-          cat,
-          CATEGORY_CONFIG[cat]?.budget || 200,
-        ]),
-      ),
-    );
+    setCategoryBudgets(defaultCategoryBudgets());
+    setBudgetSnapshots([]);
   };
 
   // Styling classes
   const bgPrimary = darkMode
     ? "bg-gray-950"
-    : "bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50";
+    : "bg-slate-50";
   const bgCard = darkMode
-    ? "bg-gray-800/80 backdrop-blur-sm"
-    : "bg-white/80 backdrop-blur-sm";
+    ? "bg-gray-900"
+    : "bg-white";
   const textPrimary = darkMode ? "text-white" : "text-gray-900";
   const textSecondary = darkMode ? "text-gray-400" : "text-gray-600";
   const borderColor = darkMode ? "border-gray-700" : "border-gray-200";
@@ -923,6 +1121,11 @@ const App: React.FC = () => {
                     Logout
                   </button>
                 </div>
+              )}
+              {isLocalMode && (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${darkMode ? "bg-amber-900/40 text-amber-300" : "bg-amber-50 text-amber-700"}`}>
+                  Local-only mode
+                </span>
               )}
               <div
                 className={`w-px h-6 hidden sm:block ${darkMode ? "bg-gray-600" : "bg-gray-300"}`}
@@ -1091,7 +1294,7 @@ const App: React.FC = () => {
               className={`mb-6 rounded-3xl overflow-hidden relative ${
                 darkMode
                   ? "bg-gradient-to-r from-indigo-800 via-purple-800 to-slate-900"
-                  : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                  : "bg-indigo-600"
               }`}
             >
               <div className="absolute inset-0 opacity-40 mix-blend-soft-light pointer-events-none">
@@ -1147,13 +1350,13 @@ const App: React.FC = () => {
 
                 {/* Right: Key numbers */}
                 <div className="w-full md:w-auto md:min-w-[260px]">
-                  <div className="grid grid-cols-2 gap-3 text-sm text-white">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
                     <div
                       className={`col-span-2 md:col-span-2 rounded-2xl p-4 backdrop-blur-md border border-white/15 ${
-                        darkMode ? "bg-black/40" : "bg-white/90"
+                        darkMode ? "bg-black/40 text-white" : "bg-white/95 text-slate-900"
                       }`}
                     >
-                      <p className="text-xs text-white/70 mb-1">
+                      <p className={`text-xs mb-1 ${darkMode ? "text-white/70" : "text-slate-500"}`}>
                         Remaining this period
                       </p>
                       <p className="text-2xl font-semibold">
@@ -1162,9 +1365,9 @@ const App: React.FC = () => {
                           maximumFractionDigits: 2,
                         })}
                       </p>
-                      <p className="mt-1 text-[11px] text-white/70">
+                      <p className={`mt-1 text-[11px] ${darkMode ? "text-white/70" : "text-slate-500"}`}>
                         YouΓÇÖve used{" "}
-                        <span className="font-semibold text-white">
+                        <span className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>
                           {Math.min(
                             100,
                             Math.max(0, budgetUsedPercent),
@@ -1175,7 +1378,7 @@ const App: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="bg-black/10 rounded-2xl p-3.5 border border-white/10">
+                    <div className="bg-black/10 rounded-2xl p-3.5 border border-white/10 text-white">
                       <p className="text-[11px] text-white/70 mb-0.5">Income</p>
                       <p className="text-lg font-semibold leading-tight">
                         {currencySymbol}
@@ -1185,7 +1388,7 @@ const App: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="bg-black/10 rounded-2xl p-3.5 border border-white/10">
+                    <div className="bg-black/10 rounded-2xl p-3.5 border border-white/10 text-white">
                       <p className="text-[11px] text-white/70 mb-0.5">
                         Expenses
                       </p>
@@ -1201,7 +1404,8 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Main content grid */}
+            {/* Keep the home screen focused on current position and next actions.
+                Detail-heavy visualizations live in Analytics. */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               {/* Left column: Overview */}
               <div className="xl:col-span-3 space-y-6">
@@ -1215,8 +1419,8 @@ const App: React.FC = () => {
                   currencySymbol={currencySymbol}
                 />
 
-                {/* Charts row */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Detailed charts are available in Analytics. */}
+                <div className="hidden grid-cols-1 lg:grid-cols-2 gap-6">
                   <div
                     className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 transition-all duration-300 transform-gpu overflow-visible card-hover`}
                   >
@@ -1228,6 +1432,7 @@ const App: React.FC = () => {
                     <ExpensesPieChart
                       data={expensesByCategory}
                       darkMode={darkMode}
+                      currencySymbol={currencySymbol}
                     />
                   </div>
 
@@ -1245,6 +1450,7 @@ const App: React.FC = () => {
                     <IncomeExpenseBarChart
                       data={chartData}
                       darkMode={darkMode}
+                      currencySymbol={currencySymbol}
                     />
                   </div>
                 </div>
@@ -1253,7 +1459,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Insight row – Health Score + Forecast + Spending Check */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
+            <div className="hidden grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
               <HealthScore
                 totalIncome={totalIncome}
                 totalExpenses={totalExpenses}
@@ -1276,7 +1482,8 @@ const App: React.FC = () => {
 
             {/* Upcoming recurring expenses — forward-looking planner */}
             <div
-              className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 mt-6 transition-all duration-300 card-hover`}
+              aria-hidden="true"
+              className={`hidden ${bgCard} rounded-2xl shadow-xl p-4 md:p-6 mt-6 transition-all duration-300 card-hover`}
             >
               <UpcomingExpensesCalendar
                 transactions={transactions}
@@ -1286,10 +1493,11 @@ const App: React.FC = () => {
             </div>
 
             {/* Bottom row – 3 cards in a single horizontal row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               {/* This period at a glance */}
               <div
-                className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-5 transition-all duration-300 card-hover`}
+                aria-hidden="true"
+                className={`hidden ${bgCard} rounded-2xl shadow-xl p-4 md:p-5 transition-all duration-300 card-hover`}
               >
                 <h3
                   className={`text-base md:text-lg font-semibold ${textPrimary} mb-2`}
@@ -1304,6 +1512,7 @@ const App: React.FC = () => {
                   darkMode={darkMode}
                   color="#6366f1"
                   title="Daily expenses"
+                  currencySymbol={currencySymbol}
                 />
               </div>
 
@@ -1489,7 +1698,7 @@ const App: React.FC = () => {
                 ...new Set(
                   transactions
                     .filter((t) => {
-                      const d = new Date(t.date);
+                      const d = parseDateOnly(t.date);
                       return d >= filterStart && d <= filterEnd;
                     })
                     .map((t) => t.category),
@@ -1586,6 +1795,37 @@ const App: React.FC = () => {
               />
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              <HealthScore
+                totalIncome={totalIncome}
+                totalExpenses={totalExpenses}
+                budgetLimit={budgetLimit}
+                goals={savingsGoals}
+                darkMode={darkMode}
+              />
+              <div className={`${bgCard} rounded-2xl border ${borderColor} p-4 md:p-6`}>
+                <SpendingForecast
+                  transactions={transactions}
+                  budgetLimit={budgetLimit}
+                  darkMode={darkMode}
+                  currencySymbol={currencySymbol}
+                />
+              </div>
+              <SpendingNudge
+                transactions={transactions}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+            </div>
+
+            <div className={`${bgCard} rounded-2xl border ${borderColor} p-4 md:p-6`}>
+              <UpcomingExpensesCalendar
+                transactions={transactions}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+            </div>
+
             {/* Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div
@@ -1599,6 +1839,7 @@ const App: React.FC = () => {
                 <ExpensesPieChart
                   data={expensesByCategory}
                   darkMode={darkMode}
+                  currencySymbol={currencySymbol}
                 />
               </div>
 
@@ -1610,7 +1851,7 @@ const App: React.FC = () => {
                 >
                   Monthly Comparison
                 </h2>
-                <IncomeExpenseBarChart data={chartData} darkMode={darkMode} />
+                <IncomeExpenseBarChart data={chartData} darkMode={darkMode} currencySymbol={currencySymbol} />
               </div>
             </div>
 
@@ -1628,6 +1869,7 @@ const App: React.FC = () => {
                 darkMode={darkMode}
                 color="#6366f1"
                 title="Daily Expenses"
+                currencySymbol={currencySymbol}
               />
             </div>
 
@@ -1730,7 +1972,7 @@ const App: React.FC = () => {
                   name: "",
                   targetAmount: "",
                   currentAmount: "",
-                  deadline: new Date().toISOString().split("T")[0],
+                  deadline: toDateInputValue(),
                   color: GOAL_COLORS[0],
                 });
                 setShowGoalModal(true);
@@ -1784,7 +2026,7 @@ const App: React.FC = () => {
             name: "",
             targetAmount: "",
             currentAmount: "",
-            deadline: new Date().toISOString().split("T")[0],
+            deadline: toDateInputValue(),
             color: GOAL_COLORS[0],
           });
           setShowGoalModal(true);
@@ -1819,8 +2061,11 @@ const App: React.FC = () => {
                 description: editingTransaction.description,
                 date: editingTransaction.date,
                 receipt: editingTransaction.receipt,
+                receiptPath: editingTransaction.receiptPath,
                 isRecurring: editingTransaction.isRecurring || false,
                 recurringFrequency: editingTransaction.recurringFrequency,
+                recurringSeriesId: editingTransaction.recurringSeriesId,
+                recurrenceEndDate: editingTransaction.recurrenceEndDate,
               }
             : presetType
               ? {
@@ -1831,8 +2076,9 @@ const App: React.FC = () => {
                       ? expenseCategories[0]
                       : incomeCategories[0],
                   description: "",
-                  date: new Date().toISOString().split("T")[0],
+                  date: toDateInputValue(),
                   receipt: null,
+                  receiptPath: null,
                   isRecurring: false,
                   recurringFrequency: "monthly",
                 }

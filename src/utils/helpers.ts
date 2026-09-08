@@ -1,25 +1,52 @@
 // Date range calculation utility
+/** Parse a date-only value without UTC conversion shifting it a day west of GMT. */
+export const parseDateOnly = (value: string): Date => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+/** Format a local date for <input type="date"> and date-only persistence. */
+export const toDateInputValue = (date: Date = new Date()): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
+ * Calendar ranges for the transaction filter. Labels such as “This month”
+ * must not silently mean “the trailing 30 days”.
+ */
 export const getDateRange = (filter: string): { start: Date; end: Date } => {
   const now = new Date();
-  const end = new Date(now);
   let start = new Date(now);
+  const end = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
 
   switch (filter) {
     case 'today':
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
       break;
-    case 'week':
-      start.setDate(now.getDate() - 7);
+    case 'week': {
+      // ISO-style week: Monday through Sunday.
+      const weekday = (now.getDay() + 6) % 7;
+      start.setDate(now.getDate() - weekday);
+      end.setDate(start.getDate() + 6);
       break;
+    }
     case 'month':
-      start.setMonth(now.getMonth() - 1);
+      start.setDate(1);
+      end.setMonth(now.getMonth() + 1, 0);
       break;
-    case 'quarter':
-      start.setMonth(now.getMonth() - 3);
+    case 'quarter': {
+      const quarterStart = Math.floor(now.getMonth() / 3) * 3;
+      start.setMonth(quarterStart, 1);
+      end.setMonth(quarterStart + 3, 0);
       break;
+    }
     case 'year':
-      start.setFullYear(now.getFullYear() - 1);
+      start.setMonth(0, 1);
+      end.setMonth(11, 31);
       break;
     default:
       start = new Date(0); // All time
@@ -29,7 +56,7 @@ export const getDateRange = (filter: string): { start: Date; end: Date } => {
 
 // Format currency
 export const formatCurrency = (amount: number, currency = 'USD'): string => {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
@@ -39,7 +66,7 @@ export const formatCurrency = (amount: number, currency = 'USD'): string => {
 
 // Format date for display
 export const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
+  const date = parseDateOnly(dateString);
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -49,8 +76,13 @@ export const formatDate = (dateString: string): string => {
 
 // Format date for input fields
 export const formatDateForInput = (date: Date = new Date()): string => {
-  return date.toISOString().split('T')[0];
+  return toDateInputValue(date);
 };
+
+/** Keep display values stable while amounts are entered as decimal strings. */
+export const toMinorUnits = (amount: number): number => Math.round((amount + Number.EPSILON) * 100);
+export const fromMinorUnits = (amount: number): number => amount / 100;
+export const normaliseMoney = (amount: number): number => fromMinorUnits(toMinorUnits(amount));
 
 // Calculate percentage
 export const calculatePercentage = (value: number, total: number): number => {
@@ -82,7 +114,9 @@ export const debounce = <T extends (...args: unknown[]) => unknown>(
 
 // Escape a value for safe inclusion in a CSV cell
 const escapeCSVField = (value: string | number): string => {
-  const str = String(value);
+  let str = String(value);
+  // Prevent spreadsheets interpreting user-controlled fields as formulas.
+  if (/^[=+\-@]/.test(str)) str = `'${str}`;
   if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -103,7 +137,9 @@ export const exportToCSV = (
   const csvContent = [
     headers.join(','),
     ...transactions.map((t) =>
-      [t.date, t.type, t.category, escapeCSVField(t.description), t.amount].join(',')
+      [t.date, t.type, t.category, t.description, t.amount]
+        .map(escapeCSVField)
+        .join(',')
     ),
   ].join('\n');
 
@@ -154,14 +190,14 @@ export const isDateInRange = (
   start: Date,
   end: Date
 ): boolean => {
-  const date = new Date(dateString);
+  const date = parseDateOnly(dateString);
   return date >= start && date <= end;
 };
 
 // Sort transactions by date (newest first)
 export const sortByDateDesc = <T extends { date: string }>(items: T[]): T[] => {
   return [...items].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    (a, b) => parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime()
   );
 };
 

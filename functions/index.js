@@ -94,7 +94,8 @@ function getRecurringSeries(transactions) {
   const series = new Map();
   for (const t of transactions) {
     if (!t.isRecurring || !t.recurringFrequency) continue;
-    const key = `${t.type}|${t.category}|${t.description}|${t.amount}|${t.recurringFrequency}`;
+    const amount = Number.isInteger(t.amountCents) ? t.amountCents / 100 : Number(t.amount) || 0;
+    const key = t.recurringSeriesId || `${t.type}|${t.category}|${t.description}|${amount}|${t.recurringFrequency}`;
     const existing = series.get(key);
     if (!existing || t.date > existing.date) series.set(key, t);
   }
@@ -109,7 +110,9 @@ function projectUpcoming(transactions, windowStart, windowEnd) {
     dates.forEach((date) => {
       upcoming.push({
         type: anchor.type,
-        amount: anchor.amount,
+        amount: Number.isInteger(anchor.amountCents)
+          ? anchor.amountCents / 100
+          : Number(anchor.amount) || 0,
         category: anchor.category,
         description: anchor.description,
         date,
@@ -130,7 +133,11 @@ function aggregateMonth(transactions, monthKey) {
   const byCategory = {};
   for (const t of transactions) {
     if (!t.date || !t.date.startsWith(monthKey)) continue;
-    const amount = Number(t.amount) || 0;
+    // amountCents is canonical for new transactions; amount is retained only
+    // as a backwards-compatible read path for existing data.
+    const amount = Number.isInteger(t.amountCents)
+      ? t.amountCents / 100
+      : Number(t.amount) || 0;
     count++;
     if (t.type === "income") {
       income += amount;
@@ -156,8 +163,16 @@ function heatColor(amount, maxAmount) {
 // HTML rendering
 // ---------------------------------------------------------------------------
 
-function money(n) {
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+function money(n, currency = "USD") {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n);
+  }
 }
 
 function escapeHtml(s) {
@@ -174,18 +189,18 @@ function sectionHeading(text) {
   return `<h3 style="font-size:14px;margin:22px 12px 8px;color:#111;">${text}</h3>`;
 }
 
-function buildSummaryHtml(income, expenses, count) {
+function buildSummaryHtml(income, expenses, count, currency) {
   const net = income - expenses;
   return `
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:6px 12px;">Income</td><td style="padding:6px 12px;text-align:right;color:#16a34a;font-weight:bold;">${money(income)}</td></tr>
-      <tr><td style="padding:6px 12px;">Expenses</td><td style="padding:6px 12px;text-align:right;color:#dc2626;font-weight:bold;">${money(expenses)}</td></tr>
-      <tr><td style="padding:6px 12px;">Net</td><td style="padding:6px 12px;text-align:right;font-weight:bold;color:${net >= 0 ? "#16a34a" : "#dc2626"};">${money(net)}</td></tr>
+      <tr><td style="padding:6px 12px;">Income</td><td style="padding:6px 12px;text-align:right;color:#16a34a;font-weight:bold;">${money(income, currency)}</td></tr>
+      <tr><td style="padding:6px 12px;">Expenses</td><td style="padding:6px 12px;text-align:right;color:#dc2626;font-weight:bold;">${money(expenses, currency)}</td></tr>
+      <tr><td style="padding:6px 12px;">Net</td><td style="padding:6px 12px;text-align:right;font-weight:bold;color:${net >= 0 ? "#16a34a" : "#dc2626"};">${money(net, currency)}</td></tr>
       <tr><td style="padding:6px 12px;">Transactions</td><td style="padding:6px 12px;text-align:right;">${count}</td></tr>
     </table>`;
 }
 
-function buildTopCategoriesHtml(byCategory) {
+function buildTopCategoriesHtml(byCategory, currency) {
   const rows = Object.entries(byCategory)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
@@ -194,7 +209,7 @@ function buildTopCategoriesHtml(byCategory) {
     .map(
       ([cat, amt]) =>
         `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee;">${escapeHtml(cat)}</td>` +
-        `<td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;">${money(amt)}</td></tr>`,
+        `<td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;">${money(amt, currency)}</td></tr>`,
     )
     .join("");
   return `${sectionHeading("Top spending categories")}
@@ -202,7 +217,7 @@ function buildTopCategoriesHtml(byCategory) {
 }
 
 /** Signed delta as a colored "+$X (▲12%)" / "−$X (▼8%)" fragment. */
-function deltaFragment(curr, prev, goodDirection) {
+function deltaFragment(curr, prev, goodDirection, currency) {
   const diff = curr - prev;
   if (diff === 0) return `<span style="color:#888;">no change</span>`;
   const pct = prev !== 0 ? Math.abs((diff / prev) * 100).toFixed(0) : null;
@@ -211,10 +226,10 @@ function deltaFragment(curr, prev, goodDirection) {
   const color = good ? "#16a34a" : "#dc2626";
   const arrow = up ? "▲" : "▼";
   const pctText = pct !== null ? ` (${arrow}${pct}%)` : ` (${arrow} new)`;
-  return `<span style="color:${color};font-weight:bold;">${up ? "+" : "−"}${money(Math.abs(diff))}${pctText}</span>`;
+  return `<span style="color:${color};font-weight:bold;">${up ? "+" : "−"}${money(Math.abs(diff), currency)}${pctText}</span>`;
 }
 
-function buildComparisonHtml(reportLabel, priorLabel, reportAgg, priorAgg) {
+function buildComparisonHtml(reportLabel, priorLabel, reportAgg, priorAgg, currency) {
   const categorySet = new Set([
     ...Object.keys(reportAgg.byCategory),
     ...Object.keys(priorAgg.byCategory),
@@ -233,16 +248,16 @@ function buildComparisonHtml(reportLabel, priorLabel, reportAgg, priorAgg) {
     .map(
       (r) =>
         `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee;">${escapeHtml(r.cat)}</td>` +
-        `<td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;">${deltaFragment(r.curr, r.prev, "down")}</td></tr>`,
+        `<td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;">${deltaFragment(r.curr, r.prev, "down", currency)}</td></tr>`,
     )
     .join("");
 
   return `
     ${sectionHeading(`Compared to ${priorLabel}`)}
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:6px 12px;">Income</td><td style="padding:6px 12px;text-align:right;">${deltaFragment(reportAgg.income, priorAgg.income, "up")}</td></tr>
-      <tr><td style="padding:6px 12px;">Expenses</td><td style="padding:6px 12px;text-align:right;">${deltaFragment(reportAgg.expenses, priorAgg.expenses, "down")}</td></tr>
-      <tr><td style="padding:6px 12px;">Net</td><td style="padding:6px 12px;text-align:right;">${deltaFragment(reportAgg.income - reportAgg.expenses, priorAgg.income - priorAgg.expenses, "up")}</td></tr>
+      <tr><td style="padding:6px 12px;">Income</td><td style="padding:6px 12px;text-align:right;">${deltaFragment(reportAgg.income, priorAgg.income, "up", currency)}</td></tr>
+      <tr><td style="padding:6px 12px;">Expenses</td><td style="padding:6px 12px;text-align:right;">${deltaFragment(reportAgg.expenses, priorAgg.expenses, "down", currency)}</td></tr>
+      <tr><td style="padding:6px 12px;">Net</td><td style="padding:6px 12px;text-align:right;">${deltaFragment(reportAgg.income - reportAgg.expenses, priorAgg.income - priorAgg.expenses, "up", currency)}</td></tr>
     </table>
     ${
       categoryRows
@@ -252,7 +267,7 @@ function buildComparisonHtml(reportLabel, priorLabel, reportAgg, priorAgg) {
     }`;
 }
 
-function buildUpcomingHtml(upcoming) {
+function buildUpcomingHtml(upcoming, currency) {
   const expenseOnly = upcoming.filter((o) => o.type === "expense").slice(0, 8);
   if (expenseOnly.length === 0) {
     return `${sectionHeading("Upcoming expenses (next 30 days)")}
@@ -265,7 +280,7 @@ function buildUpcomingHtml(upcoming) {
       return `<tr>
         <td style="padding:6px 12px;border-bottom:1px solid #eee;white-space:nowrap;">${dateLabel}</td>
         <td style="padding:6px 12px;border-bottom:1px solid #eee;">${escapeHtml(o.description || o.category)}</td>
-        <td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;">${money(o.amount)}</td>
+        <td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;">${money(o.amount, currency)}</td>
       </tr>`;
     })
     .join("");
@@ -273,7 +288,7 @@ function buildUpcomingHtml(upcoming) {
     <table style="width:100%;border-collapse:collapse;font-size:14px;">${rows}</table>`;
 }
 
-function buildBudgetHistoryHtml(historyRows) {
+function buildBudgetHistoryHtml(historyRows, currency) {
   const visible = historyRows.filter((r) => r.hasData);
   if (visible.length === 0) {
     return `${sectionHeading("Budget history")}
@@ -290,7 +305,7 @@ function buildBudgetHistoryHtml(historyRows) {
             <div style="background:${color};height:8px;width:${pct}%;"></div>
           </div>
         </td>
-        <td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:${color};font-weight:bold;">${money(r.spent)} / ${money(r.budget)}</td>
+        <td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:${color};font-weight:bold;">${money(r.spent, currency)} / ${money(r.budget, currency)}</td>
       </tr>`;
     })
     .join("");
@@ -361,6 +376,7 @@ function buildHtml({
   historyRows,
   upcoming,
   dailyTotals,
+  currency,
 }) {
   return `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;">
@@ -368,12 +384,12 @@ function buildHtml({
       <h1 style="margin:0;font-size:20px;">Budget Tracker — ${reportLabel} report</h1>
     </div>
     <div style="padding:20px 4px;">
-      ${buildSummaryHtml(reportAgg.income, reportAgg.expenses, reportAgg.count)}
-      ${buildTopCategoriesHtml(reportAgg.byCategory)}
-      ${buildComparisonHtml(reportLabel, priorLabel, reportAgg, priorAgg)}
+      ${buildSummaryHtml(reportAgg.income, reportAgg.expenses, reportAgg.count, currency)}
+      ${buildTopCategoriesHtml(reportAgg.byCategory, currency)}
+      ${buildComparisonHtml(reportLabel, priorLabel, reportAgg, priorAgg, currency)}
       ${buildHeatmapHtml(reportDate, dailyTotals)}
-      ${buildBudgetHistoryHtml(historyRows)}
-      ${buildUpcomingHtml(upcoming)}
+      ${buildBudgetHistoryHtml(historyRows, currency)}
+      ${buildUpcomingHtml(upcoming, currency)}
       <p style="font-size:12px;color:#888;margin:24px 12px 0;">
         You're receiving this because email reports are enabled in your
         Budget Tracker settings. Turn them off in Settings to unsubscribe.
@@ -428,6 +444,7 @@ exports.sendMonthlyReports = onSchedule(
         const prefsSnap = await userRef.collection("settings").doc("preferences").get();
         const prefs = prefsSnap.data();
         if (!prefs || !prefs.emailReports || !prefs.reportEmail) continue;
+        const currency = prefs.currency || "USD";
 
         const [txSnap, recurringSnap, budgetsSnap, historySnap] = await Promise.all([
           userRef
@@ -473,7 +490,10 @@ exports.sendMonthlyReports = onSchedule(
           .filter((t) => t.type === "expense" && t.date && t.date.startsWith(reportMonth))
           .forEach((t) => {
             const day = parseInt(t.date.substring(8, 10), 10);
-            dailyTotals[day] = (dailyTotals[day] || 0) + (Number(t.amount) || 0);
+            const amount = Number.isInteger(t.amountCents)
+              ? t.amountCents / 100
+              : Number(t.amount) || 0;
+            dailyTotals[day] = (dailyTotals[day] || 0) + amount;
           });
 
         await transporter.sendMail({
@@ -489,6 +509,7 @@ exports.sendMonthlyReports = onSchedule(
             historyRows,
             upcoming,
             dailyTotals,
+            currency,
           }),
         });
         sent++;

@@ -39,11 +39,13 @@ interface TrendData {
 interface PieChartProps {
   data: CategoryExpense[];
   darkMode: boolean;
+  currencySymbol?: string;
 }
 
 interface BarChartProps {
   data: MonthlyData[];
   darkMode: boolean;
+  currencySymbol?: string;
 }
 
 interface AreaChartProps {
@@ -51,6 +53,7 @@ interface AreaChartProps {
   darkMode: boolean;
   color?: string;
   title?: string;
+  currencySymbol?: string;
 }
 
 interface CategoryBudgetChartProps {
@@ -77,7 +80,8 @@ const CustomTooltip: React.FC<{
   payload?: any[];
   label?: string;
   darkMode: boolean;
-}> = ({ active, payload, label, darkMode }) => {
+  currencySymbol?: string;
+}> = ({ active, payload, label, darkMode, currencySymbol = "$" }) => {
   if (active && payload && payload.length) {
     return (
       <div
@@ -88,7 +92,7 @@ const CustomTooltip: React.FC<{
         {label && <p className="font-medium mb-1">{label}</p>}
         {payload.map((entry, index) => (
           <p key={index} className="text-sm" style={{ color: entry.color }}>
-            {entry.name}: $
+            {entry.name}: {currencySymbol}
             {entry.value?.toLocaleString("en-US", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
@@ -105,6 +109,7 @@ const CustomTooltip: React.FC<{
 export const ExpensesPieChart: React.FC<PieChartProps> = ({
   data,
   darkMode,
+  currencySymbol,
 }) => {
   if (data.length === 0) {
     return (
@@ -182,7 +187,7 @@ export const ExpensesPieChart: React.FC<PieChartProps> = ({
               />
             ))}
           </Pie>
-          <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
+          <Tooltip content={<CustomTooltip darkMode={darkMode} currencySymbol={currencySymbol} />} />
           <Legend
             layout="horizontal"
             verticalAlign="bottom"
@@ -204,6 +209,7 @@ export const ExpensesPieChart: React.FC<PieChartProps> = ({
 export const IncomeExpenseBarChart: React.FC<BarChartProps> = ({
   data,
   darkMode,
+  currencySymbol = "$",
 }) => {
   if (data.length === 0) {
     return (
@@ -271,10 +277,10 @@ export const IncomeExpenseBarChart: React.FC<BarChartProps> = ({
           axisLine={false}
           tickLine={false}
           tickFormatter={(value) =>
-            `$${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`
+            `${currencySymbol}${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`
           }
         />
-        <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
+        <Tooltip content={<CustomTooltip darkMode={darkMode} currencySymbol={currencySymbol} />} />
         <Legend
           wrapperStyle={{ paddingTop: "10px" }}
           formatter={(value) => (
@@ -305,6 +311,7 @@ export const SpendingTrendChart: React.FC<AreaChartProps> = ({
   data,
   darkMode,
   color = "#6366f1",
+  currencySymbol = "$",
   // title,
 }) => {
   if (data.length === 0) {
@@ -351,9 +358,9 @@ export const SpendingTrendChart: React.FC<AreaChartProps> = ({
           tick={{ fill: darkMode ? "#9ca3af" : "#6b7280", fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(value) => `$${value}`}
+          tickFormatter={(value) => `${currencySymbol}${value}`}
         />
-        <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
+        <Tooltip content={<CustomTooltip darkMode={darkMode} currencySymbol={currencySymbol} />} />
         <Area
           type="monotone"
           dataKey="amount"
