@@ -403,6 +403,7 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
       remaining: Math.max(item.budget - item.value, 0),
       color: item.color,
     }));
+  const usedBudgetData = budgetData.filter((item) => item.spent > 0);
 
   if (budgetData.length === 0) {
     return (
@@ -433,6 +434,39 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
 
   return (
     <div className="space-y-4">
+      {usedBudgetData.map((item, index) => (
+        <div key={index} className="space-y-1">
+          <div className="flex justify-between items-center text-sm">
+            <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
+              {item.name}
+            </span>
+            <span className={darkMode ? "text-gray-400" : "text-gray-500"}>
+              {currencySymbol}
+              {item.spent.toFixed(0)} / {currencySymbol}
+              {item.budget.toFixed(0)}
+            </span>
+          </div>
+          <div
+            className={`h-3 rounded-full overflow-hidden ${
+              darkMode ? "bg-gray-700" : "bg-gray-200"
+            }`}
+          >
+            <div
+              className="h-full rounded-full transition-all duration-500 ease-out"
+              style={{
+                width: `${item.percentage}%`,
+                backgroundColor:
+                  item.percentage >= 100
+                    ? "#ef4444"
+                    : item.percentage >= 80
+                      ? "#f59e0b"
+                      : item.color,
+              }}
+            />
+          </div>
+        </div>
+      ))}
+
       <div
         className={`rounded-xl border p-4 ${
           darkMode
@@ -486,39 +520,6 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
             : `${currencySymbol}${formatAmount(remaining)} remaining in your category budgets`}
         </p>
       </div>
-
-      {budgetData.map((item, index) => (
-        <div key={index} className="space-y-1">
-          <div className="flex justify-between items-center text-sm">
-            <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-              {item.name}
-            </span>
-            <span className={darkMode ? "text-gray-400" : "text-gray-500"}>
-              {currencySymbol}
-              {item.spent.toFixed(0)} / {currencySymbol}
-              {item.budget.toFixed(0)}
-            </span>
-          </div>
-          <div
-            className={`h-3 rounded-full overflow-hidden ${
-              darkMode ? "bg-gray-700" : "bg-gray-200"
-            }`}
-          >
-            <div
-              className="h-full rounded-full transition-all duration-500 ease-out"
-              style={{
-                width: `${item.percentage}%`,
-                backgroundColor:
-                  item.percentage >= 100
-                    ? "#ef4444"
-                    : item.percentage >= 80
-                      ? "#f59e0b"
-                      : item.color,
-              }}
-            />
-          </div>
-        </div>
-      ))}
     </div>
   );
 };
