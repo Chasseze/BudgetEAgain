@@ -286,6 +286,7 @@ const App: React.FC = () => {
   // Auth State
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [, setAuthProfileRevision] = useState(0);
 
   // Keep the root `dark` class + PWA theme color in sync so global dark
   // styles (scrollbars, floating labels) and the browser chrome follow
@@ -619,9 +620,19 @@ const App: React.FC = () => {
   const handleSendAccountVerification = async () => {
     if (!user) throw new Error("Sign in to verify your email address.");
     await sendEmailVerification(user);
-    await reload(user);
-    setUser(getAuth(app!).currentUser);
     showToast("Verification email sent. Open it to confirm your account email.");
+  };
+
+  const refreshAccountVerificationStatus = async () => {
+    if (!app || !user) throw new Error("Sign in to refresh account verification.");
+    await reload(user);
+    setUser(getAuth(app).currentUser);
+    setAuthProfileRevision((revision) => revision + 1);
+    showToast(
+      getAuth(app).currentUser?.emailVerified
+        ? "Your account email is verified."
+        : "Email verification has not been completed yet.",
+    );
   };
 
   // Analytics is deliberately disabled until the signed-in user opts in.
@@ -659,8 +670,20 @@ const App: React.FC = () => {
     }
     const auth = getAuth(app!);
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setAuthChecked(true);
+      void (async () => {
+        if (firebaseUser) {
+          // emailVerified is cached by Firebase Auth. Refresh it whenever the
+          // app restores a session so confirmations made in another tab/device
+          // are reflected without requiring a new sign-in.
+          try {
+            await reload(firebaseUser);
+          } catch (error) {
+            console.warn("Unable to refresh Firebase profile:", error);
+          }
+        }
+        setUser(auth.currentUser);
+        setAuthChecked(true);
+      })();
     });
     return () => unsubscribe();
   }, [isLocalMode]);
@@ -2228,6 +2251,7 @@ const App: React.FC = () => {
             incomeCategories={incomeCategories}
             user={user}
             onSendAccountVerification={handleSendAccountVerification}
+            onRefreshAccountVerification={refreshAccountVerificationStatus}
             onRequestReportEmailVerification={requestReportEmailVerification}
             onDeleteAccount={handleDeleteAccount}
           />

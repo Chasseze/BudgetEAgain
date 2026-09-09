@@ -47,6 +47,7 @@ interface SettingsSectionProps {
   incomeCategories: string[];
   user: User | null;
   onSendAccountVerification: () => Promise<void>;
+  onRefreshAccountVerification: () => Promise<void>;
   onRequestReportEmailVerification: (email: string) => Promise<void>;
   onDeleteAccount: (password?: string) => Promise<void>;
 }
@@ -85,6 +86,7 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   incomeCategories,
   user,
   onSendAccountVerification,
+  onRefreshAccountVerification,
   onRequestReportEmailVerification,
   onDeleteAccount,
 }) => {
@@ -104,6 +106,7 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   const [reportEmail, setReportEmail] = useState(userSettings.reportEmail || '');
   const [isSendingReportVerification, setIsSendingReportVerification] = useState(false);
   const [isSendingAccountVerification, setIsSendingAccountVerification] = useState(false);
+  const [isRefreshingAccountVerification, setIsRefreshingAccountVerification] = useState(false);
   const [isExportingAllData, setIsExportingAllData] = useState(false);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   const [deleteAcknowledgement, setDeleteAcknowledgement] = useState('');
@@ -778,23 +781,42 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
                 </p>
               </div>
               {!user.emailVerified && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setIsSendingAccountVerification(true);
-                    try {
-                      await onSendAccountVerification();
-                    } catch (error) {
-                      onShowToast(error instanceof Error ? error.message : 'Unable to send verification email.');
-                    } finally {
-                      setIsSendingAccountVerification(false);
-                    }
-                  }}
-                  disabled={isSendingAccountVerification}
-                  className="shrink-0 px-3 py-2 rounded-lg border border-indigo-200 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
-                >
-                  {isSendingAccountVerification ? 'Sending…' : 'Verify email'}
-                </button>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsRefreshingAccountVerification(true);
+                      try {
+                        await onRefreshAccountVerification();
+                      } catch (error) {
+                        onShowToast(error instanceof Error ? error.message : 'Unable to refresh verification status.');
+                      } finally {
+                        setIsRefreshingAccountVerification(false);
+                      }
+                    }}
+                    disabled={isRefreshingAccountVerification}
+                    className="px-3 py-2 rounded-lg border border-emerald-200 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                  >
+                    {isRefreshingAccountVerification ? 'Checking…' : "I've verified — refresh"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsSendingAccountVerification(true);
+                      try {
+                        await onSendAccountVerification();
+                      } catch (error) {
+                        onShowToast(error instanceof Error ? error.message : 'Unable to send verification email.');
+                      } finally {
+                        setIsSendingAccountVerification(false);
+                      }
+                    }}
+                    disabled={isSendingAccountVerification}
+                    className="px-3 py-2 rounded-lg border border-indigo-200 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                  >
+                    {isSendingAccountVerification ? 'Sending…' : 'Send verification email'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
