@@ -465,7 +465,7 @@ exports.requestReportEmailVerification = onCall(
     ]);
 
     const confirmationUrl =
-      `https://us-central1-${projectId}.cloudfunctions.net/confirmVerifiedReportEmail` +
+      `https://us-central1-${projectId}.cloudfunctions.net/confirmReportEmail` +
       `?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`;
     await createMailTransport().sendMail({
       from: `"Budget Tracker" <${SMTP_USER.value()}>`,
@@ -484,7 +484,7 @@ exports.requestReportEmailVerification = onCall(
 );
 
 /** Public, token-protected endpoint linked from the verification email. */
-exports.confirmVerifiedReportEmail = onRequest(async (req, res) => {
+exports.confirmReportEmail = onRequest(async (req, res) => {
   const uid = String(req.query.uid || "");
   const token = String(req.query.token || "");
   const render = (status, title, body) => {
