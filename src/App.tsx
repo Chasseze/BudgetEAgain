@@ -25,7 +25,7 @@ import useLocalStorage from "./hooks/useLocalStorage";
 // Components
 import MobileNav from "./components/MobileNav";
 import Toast from "./components/Toast";
-import Dashboard from "./components/Dashboard";
+import OverviewCards from "./components/OverviewCards";
 import TransactionList from "./components/TransactionList";
 import TransactionModal from "./components/TransactionModal";
 import SpendingInsights from "./components/SpendingInsights";
@@ -54,6 +54,7 @@ const SpendingTrendChart = lazy(() =>
 );
 const SpendingForecast = lazy(() => import("./components/SpendingForecast"));
 import GoalsSection from "./components/GoalsSection";
+import UpcomingGoalCard from "./components/UpcomingGoalCard";
 import HealthScore from "./components/HealthScore";
 import SettingsSection from "./components/SettingsSection";
 import SpendingHeatmap from "./components/SpendingHeatmap";
@@ -711,6 +712,10 @@ const App: React.FC = () => {
     }
     return { totalIncome: income, totalExpenses: expenses };
   }, [filteredByDate]);
+
+  const remaining = totalIncome - totalExpenses;
+  const budgetUsedPercent =
+    budgetLimit > 0 ? (totalExpenses / budgetLimit) * 100 : 0;
 
   const categoryExpenseData = useMemo(
     () =>
@@ -1520,6 +1525,7 @@ const App: React.FC = () => {
         {/* ==================== HOME TAB ==================== */}
         {activeTab === "home" && (
           <>
+            {/* Recurring transactions due */}
             {!isDataLoading && (
               <RecurringBanner
                 transactions={transactions}
@@ -1528,27 +1534,300 @@ const App: React.FC = () => {
                 onPostAll={handlePostRecurring}
               />
             )}
-            <Dashboard
-              transactions={transactions}
-              budget={budgetLimit}
-              categories={categoryExpenseData}
-              goals={savingsGoals}
-              currencySymbol={currencySymbol}
-              name={user?.displayName}
-              loading={isDataLoading}
-              onAdd={() => { setEditingTransaction(null); setShowAddModal(true); }}
-              onEdit={handleEditTransaction}
-              onNavigate={(tab) => {
-                if (tab === "analytics") setFilterDateRange("month");
-                if (tab === "transactions") {
-                  setFilterDateRange("all");
-                  setFilterCategory("all");
-                  setFilterType("all");
-                  setSearchQuery("");
-                }
-                setActiveTab(tab);
-              }}
-            />
+
+            {/* Hero / Welcome Banner */}
+            <div
+              className={`mb-6 rounded-3xl overflow-hidden relative ${
+                darkMode
+                  ? "bg-gradient-to-r from-indigo-800 via-purple-800 to-slate-900"
+                  : "bg-indigo-600"
+              }`}
+            >
+              <div className="absolute inset-0 opacity-40 mix-blend-soft-light pointer-events-none">
+                <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/20 rounded-full blur-3xl" />
+                <div className="absolute bottom-0 right-0 w-56 h-56 bg-white/10 rounded-full blur-3xl" />
+              </div>
+
+              <div className="relative z-10 px-5 py-6 md:px-8 md:py-7 flex flex-col md:flex-row md:items-center gap-6">
+                {/* Left: Greeting + summary */}
+                <div className="flex-1 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/70">
+                    Personal finance snapshot
+                  </p>
+                  <h2 className="text-2xl md:text-3xl font-bold text-white leading-tight">
+                    {user?.displayName
+                      ? `Welcome back, ${user.displayName.split(" ")[0]}`
+                      : "Welcome back"}
+                  </h2>
+                  <p className="text-sm md:text-base text-white/80 max-w-xl">
+                    See how you&apos;re tracking{" "}
+                    {DATE_RANGE_OPTIONS.find(
+                      (o) => o.value === filterDateRange,
+                    )?.label?.toLowerCase()}
+                    . Stay on top of your spending, savings, and goals at a
+                    glance.
+                  </p>
+
+                  <div className="mt-4 inline-flex flex-wrap gap-2 bg-black/10 rounded-2xl p-1">
+                    <button
+                      onClick={() => {
+                        setEditingTransaction(null);
+                        setShowAddModal(true);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add transaction
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("goals")}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/90 hover:bg-emerald-400 text-white text-sm font-medium shadow-md transition-colors"
+                    >
+                      View savings goals
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("transactions")}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-500/90 hover:bg-sky-400 text-white text-sm font-medium shadow-md transition-colors"
+                    >
+                      Recent activity
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right: Key numbers */}
+                <div className="w-full md:w-auto md:min-w-[260px]">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div
+                      className={`col-span-2 md:col-span-2 rounded-2xl p-4 backdrop-blur-md border border-white/15 ${
+                        darkMode ? "bg-black/40 text-white" : "bg-white/95 text-slate-900"
+                      }`}
+                    >
+                      <p className={`text-xs mb-1 ${darkMode ? "text-white/70" : "text-slate-500"}`}>
+                        Remaining this period
+                      </p>
+                      <p className="text-2xl font-semibold">
+                        {currencySymbol}
+                        {Math.abs(remaining).toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </p>
+                      <p className={`mt-1 text-[11px] ${darkMode ? "text-white/70" : "text-slate-500"}`}>
+                        You've used{" "}
+                        <span className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                          {Math.min(
+                            100,
+                            Math.max(0, budgetUsedPercent),
+                          ).toFixed(0)}
+                          %
+                        </span>{" "}
+                        of your main budget.
+                      </p>
+                    </div>
+
+                    <div className="bg-black/10 rounded-2xl p-3.5 border border-white/10 text-white">
+                      <p className="text-[11px] text-white/70 mb-0.5">Income</p>
+                      <p className="text-lg font-semibold leading-tight">
+                        {currencySymbol}
+                        {totalIncome.toLocaleString(undefined, {
+                          maximumFractionDigits: 0,
+                        })}
+                      </p>
+                    </div>
+
+                    <div className="bg-black/10 rounded-2xl p-3.5 border border-white/10 text-white">
+                      <p className="text-[11px] text-white/70 mb-0.5">
+                        Expenses
+                      </p>
+                      <p className="text-lg font-semibold leading-tight">
+                        {currencySymbol}
+                        {totalExpenses.toLocaleString(undefined, {
+                          maximumFractionDigits: 0,
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Keep the home screen focused on current position and next actions.
+                Detail-heavy visualizations live in Analytics. */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              {/* Left column: Overview */}
+              <div className="xl:col-span-3 space-y-6">
+                {/* Overview Cards */}
+                <OverviewCards
+                  totalIncome={totalIncome}
+                  totalExpenses={totalExpenses}
+                  remaining={remaining}
+                  budgetUsedPercent={budgetUsedPercent}
+                  darkMode={darkMode}
+                  currencySymbol={currencySymbol}
+                />
+
+                {/* Detailed charts are available in Analytics. */}
+                <div className="hidden grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div
+                    className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 transition-all duration-300 transform-gpu overflow-visible card-hover`}
+                  >
+                    <h2
+                      className={`text-lg md:text-xl font-bold ${textPrimary} mb-4 flex items-center justify-between`}
+                    >
+                      <span>Expenses by category</span>
+                    </h2>
+                    <ExpensesPieChart
+                      data={expensesByCategory}
+                      darkMode={darkMode}
+                      currencySymbol={currencySymbol}
+                    />
+                  </div>
+
+                  <div
+                    className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-6 transition-all duration-300 card-hover`}
+                  >
+                    <h2
+                      className={`text-lg md:text-xl font-bold ${textPrimary} mb-1 flex items-center justify-between`}
+                    >
+                      <span>Income vs expenses</span>
+                    </h2>
+                    <p className={`text-xs ${textSecondary} mb-4`}>
+                      Last 6 months overview
+                    </p>
+                    <IncomeExpenseBarChart
+                      data={chartData}
+                      darkMode={darkMode}
+                      currencySymbol={currencySymbol}
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Insight row – Health Score + Forecast + Spending Check */}
+            <div className="hidden grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
+              <HealthScore
+                totalIncome={totalIncome}
+                totalExpenses={totalExpenses}
+                budgetLimit={budgetLimit}
+                goals={savingsGoals}
+                darkMode={darkMode}
+              />
+              <SpendingForecast
+                transactions={transactions}
+                budgetLimit={budgetLimit}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+              <SpendingNudge
+                transactions={transactions}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+            </div>
+
+            {/* Upcoming recurring expenses — forward-looking planner */}
+            <div
+              aria-hidden="true"
+              className={`hidden ${bgCard} rounded-2xl shadow-xl p-4 md:p-6 mt-6 transition-all duration-300 card-hover`}
+            >
+              <UpcomingExpensesCalendar
+                transactions={transactions}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+              />
+            </div>
+
+            {/* Bottom row – 3 cards in a single horizontal row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              {/* This period at a glance */}
+              <div
+                aria-hidden="true"
+                className={`hidden ${bgCard} rounded-2xl shadow-xl p-4 md:p-5 transition-all duration-300 card-hover`}
+              >
+                <h3
+                  className={`text-base md:text-lg font-semibold ${textPrimary} mb-2`}
+                >
+                  This period at a glance
+                </h3>
+                <p className={`text-xs ${textSecondary} mb-4`}>
+                  Quick view of how your spending compares to your budget.
+                </p>
+                <SpendingTrendChart
+                  data={dailyTrendData}
+                  darkMode={darkMode}
+                  color="#6366f1"
+                  title="Daily expenses"
+                  currencySymbol={currencySymbol}
+                />
+              </div>
+
+              {/* Savings goals */}
+              <div
+                className={`${bgCard} rounded-2xl shadow-xl p-4 md:p-5 transition-all duration-300 card-hover`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3
+                    className={`text-base md:text-lg font-semibold ${textPrimary}`}
+                  >
+                    Savings goals
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab("goals")}
+                    className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                  >
+                    Manage →
+                  </button>
+                </div>
+                {savingsGoals.length === 0 ? (
+                  <p className={`text-xs ${textSecondary}`}>
+                    You don&apos;t have any goals yet. Create your first savings
+                    goal to start tracking progress visually.
+                  </p>
+                ) : (
+                  <ul className="space-y-2 max-h-48 overflow-y-auto hide-scrollbar">
+                    {savingsGoals.slice(0, 3).map((goal) => {
+                      const pct =
+                        goal.targetAmount > 0
+                          ? Math.min(
+                              100,
+                              (goal.currentAmount / goal.targetAmount) * 100,
+                            )
+                          : 0;
+                      return (
+                        <li key={goal.id}>
+                          <div className="flex justify-between text-xs mb-1.5">
+                            <span className={textPrimary}>{goal.name}</span>
+                            <span className={textSecondary}>
+                              {pct.toFixed(0)}%
+                            </span>
+                          </div>
+                          <div
+                            className={`h-1.5 rounded-full overflow-hidden ${darkMode ? "bg-gray-700" : "bg-gray-200/70"}`}
+                          >
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: goal.color,
+                              }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+
+              {/* Upcoming Goal */}
+              <UpcomingGoalCard
+                goals={savingsGoals}
+                darkMode={darkMode}
+                currencySymbol={currencySymbol}
+                onViewGoals={() => setActiveTab("goals")}
+              />
+            </div>
           </>
         )}
 
