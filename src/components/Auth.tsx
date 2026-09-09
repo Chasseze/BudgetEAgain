@@ -7,6 +7,8 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   type User,
 } from "firebase/auth";
 import { app } from "../config/firebase";
@@ -27,6 +29,7 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +37,7 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setNotice("");
     setIsLoading(true);
     if (!auth) {
       setError("Firebase app not initialized.");
@@ -44,6 +48,13 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
       let userCredential;
       if (isRegister) {
         userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        // Verification protects the email address used for account recovery.
+        // A failure here does not prevent the newly-created account from being used.
+        try {
+          await sendEmailVerification(userCredential.user);
+        } catch (verificationError) {
+          console.error("Could not send verification email:", verificationError);
+        }
       } else {
         userCredential = await signInWithEmailAndPassword(auth, email, password);
       }
@@ -61,6 +72,35 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
         setError("Invalid credentials. Please check your email and password.");
       } else {
         setError(err.message);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!auth) {
+      setError("Firebase app not initialized.");
+      return;
+    }
+    if (!email.trim()) {
+      setError("Enter your email address first, then select Forgot password.");
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      // Keep the response generic so the login form does not reveal whether an
+      // email address has an account.
+      setNotice("If an account matches that address, a password reset link has been sent.");
+    } catch (err: any) {
+      if (err.code === "auth/invalid-email") {
+        setError("Enter a valid email address.");
+      } else {
+        setNotice("If an account matches that address, a password reset link has been sent.");
       }
     } finally {
       setIsLoading(false);
@@ -289,6 +329,12 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
                 </div>
               )}
 
+              {notice && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <p className="text-emerald-700 text-sm text-center">{notice}</p>
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 type="submit"
@@ -305,6 +351,17 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
                 )}
               </button>
             </form>
+
+            {!isRegister && (
+              <button
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={isLoading}
+                className="mt-3 w-full text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+              >
+                Forgot password?
+              </button>
+            )}
 
             {/* Divider */}
             <div className="flex items-center gap-4 my-6">
@@ -348,6 +405,7 @@ const Auth: React.FC<AuthProps> = ({ onAuth, compact }) => {
                 onClick={() => {
                   setIsRegister(!isRegister);
                   setError("");
+                  setNotice("");
                 }}
                 className="text-indigo-600 hover:text-indigo-700 font-medium transition-colors"
               >

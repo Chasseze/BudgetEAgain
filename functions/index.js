@@ -14,10 +14,12 @@
 
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -30,6 +32,23 @@ const SMTP_PASS = defineSecret("SMTP_PASS");
 const DEFAULT_BUDGET_LIMIT = 1000;
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function createMailTransport() {
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user: SMTP_USER.value(), pass: SMTP_PASS.value() },
+  });
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^\S+@\S+\.\S+$/.test(value);
+}
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -399,6 +418,141 @@ function buildHtml({
 }
 
 // ---------------------------------------------------------------------------
+// Report-email verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends an ownership-confirmation link for the address that will receive
+ * financial summaries. The random token is stored only as a SHA-256 hash.
+ */
+exports.requestReportEmailVerification = onCall(
+  { secrets: [SMTP_USER, SMTP_PASS] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before verifying a report email address.");
+    }
+
+    const email = normalizeEmail(request.data?.email);
+    if (!isValidEmail(email)) {
+      throw new HttpsError("invalid-argument", "Enter a valid email address.");
+    }
+
+    const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
+    if (!projectId) {
+      throw new HttpsError("failed-precondition", "Project configuration is unavailable.");
+    }
+
+    const uid = request.auth.uid;
+    const token = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 24 * 60 * 60 * 1000);
+    const db = admin.firestore();
+
+    await Promise.all([
+      db.doc(`users/${uid}/settings/preferences`).set(
+        {
+          reportEmail: email,
+          reportEmailVerified: false,
+          reportEmailVerifiedFor: "",
+        },
+        { merge: true },
+      ),
+      db.collection("reportEmailVerifications").doc(uid).set({
+        email,
+        tokenHash,
+        expiresAt,
+      }),
+    ]);
+
+    const confirmationUrl =
+      `https://us-central1-${projectId}.cloudfunctions.net/confirmReportEmail` +
+      `?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`;
+    await createMailTransport().sendMail({
+      from: `"Budget Tracker" <${SMTP_USER.value()}>`,
+      to: email,
+      subject: "Confirm your Budget Tracker report email",
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;">
+        <h1 style="font-size:20px;">Confirm your report email</h1>
+        <p>This address was selected to receive Budget Tracker financial summaries.</p>
+        <p><a href="${confirmationUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Confirm email address</a></p>
+        <p style="font-size:12px;color:#666;">This link expires in 24 hours. If you did not request it, you can ignore this email.</p>
+      </div>`,
+    });
+
+    return { message: "Verification email sent." };
+  },
+);
+
+/** Public, token-protected endpoint linked from the verification email. */
+exports.confirmReportEmail = onRequest(async (req, res) => {
+  const uid = String(req.query.uid || "");
+  const token = String(req.query.token || "");
+  const render = (status, title, body) => {
+    res.status(status).send(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>
+      <body style="font-family:Arial,Helvetica,sans-serif;background:#f8fafc;padding:40px;color:#111;">
+        <main style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:28px;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+          <h1 style="font-size:22px;margin-top:0;">${title}</h1><p>${body}</p>
+        </main></body></html>`);
+  };
+
+  if (!uid || !token) {
+    render(400, "Confirmation link incomplete", "Request a new report-email verification link from Budget Tracker Settings.");
+    return;
+  }
+
+  try {
+    const db = admin.firestore();
+    const verificationRef = db.collection("reportEmailVerifications").doc(uid);
+    const verificationSnap = await verificationRef.get();
+    const verification = verificationSnap.data();
+    const receivedHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expired = !verification?.expiresAt || verification.expiresAt.toMillis() < Date.now();
+
+    if (!verification || expired || receivedHash !== verification.tokenHash) {
+      render(400, "This link is no longer valid", "Request a new report-email verification link from Budget Tracker Settings.");
+      return;
+    }
+
+    await Promise.all([
+      db.doc(`users/${uid}/settings/preferences`).set(
+        {
+          reportEmail: verification.email,
+          reportEmailVerified: true,
+          reportEmailVerifiedFor: verification.email,
+        },
+        { merge: true },
+      ),
+      verificationRef.delete(),
+    ]);
+    render(200, "Report email confirmed", "This address can now receive Budget Tracker financial summaries. You may close this page.");
+  } catch (error) {
+    logger.error("Report email confirmation failed", error);
+    render(500, "Confirmation unavailable", "Please try the link again later or request a new one from Settings.");
+  }
+});
+
+/** Remove all application data for the authenticated account before Auth deletion. */
+exports.purgeAccountData = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in before deleting account data.");
+  }
+
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+  try {
+    await Promise.all([
+      db.recursiveDelete(db.doc(`users/${uid}`)),
+      db.collection("reportEmailVerifications").doc(uid).delete(),
+      admin.storage().bucket().deleteFiles({ prefix: `receipts/${uid}/` }),
+    ]);
+    return { message: "Account data removed." };
+  } catch (error) {
+    logger.error(`Account data purge failed for ${uid}`, error);
+    throw new HttpsError("internal", "Unable to remove account data.");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Scheduled function
 // ---------------------------------------------------------------------------
 
@@ -427,12 +581,7 @@ exports.sendMonthlyReports = onSchedule(
     const tomorrow = toDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1));
     const in30Days = toDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30));
 
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user: SMTP_USER.value(), pass: SMTP_PASS.value() },
-    });
+    const transporter = createMailTransport();
 
     // users/{uid} docs are "virtual" (subcollections only), so list refs
     const userRefs = await db.collection("users").listDocuments();
@@ -443,7 +592,14 @@ exports.sendMonthlyReports = onSchedule(
       try {
         const prefsSnap = await userRef.collection("settings").doc("preferences").get();
         const prefs = prefsSnap.data();
-        if (!prefs || !prefs.emailReports || !prefs.reportEmail) continue;
+        const reportEmail = normalizeEmail(prefs?.reportEmail);
+        if (
+          !prefs ||
+          !prefs.emailReports ||
+          !reportEmail ||
+          prefs.reportEmailVerified !== true ||
+          prefs.reportEmailVerifiedFor !== reportEmail
+        ) continue;
         const currency = prefs.currency || "USD";
 
         const [txSnap, recurringSnap, budgetsSnap, historySnap] = await Promise.all([
@@ -498,7 +654,7 @@ exports.sendMonthlyReports = onSchedule(
 
         await transporter.sendMail({
           from: `"Budget Tracker" <${SMTP_USER.value()}>`,
-          to: prefs.reportEmail,
+          to: reportEmail,
           subject: `Your ${reportLabel} budget report`,
           html: buildHtml({
             reportLabel,

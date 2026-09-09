@@ -80,6 +80,7 @@ import {
   toDateInputValue,
   toMinorUnits,
   exportToCSV,
+  exportToJSON,
 } from "./utils/helpers";
 
 // Constants
@@ -100,6 +101,7 @@ import {
   storage,
   isFirebaseAvailable,
   isLocalModeEnabled,
+  setAnalyticsConsent,
 } from "./config/firebase";
 import {
   collection,
@@ -115,8 +117,21 @@ import {
   getDocs,
   writeBatch,
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
+import {
+  deleteUser,
+  EmailAuthProvider,
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  reload,
+  sendEmailVerification,
+  signOut,
+  User,
+} from "firebase/auth";
 import { deleteObject, listAll, ref as storageRef } from "firebase/storage";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 // Types
 interface Transaction {
@@ -169,6 +184,9 @@ interface UserSettings {
   currency: string;
   emailReports: boolean;
   reportEmail: string;
+  reportEmailVerified: boolean;
+  reportEmailVerifiedFor: string;
+  analyticsConsent: boolean;
   customExpenseCategories: { name: string; color: string; budget?: number }[];
   customIncomeCategories: { name: string; color: string }[];
 }
@@ -177,6 +195,9 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
   currency: DEFAULT_CURRENCY,
   emailReports: false,
   reportEmail: "",
+  reportEmailVerified: false,
+  reportEmailVerifiedFor: "",
+  analyticsConsent: false,
   customExpenseCategories: [],
   customIncomeCategories: [],
 };
@@ -562,6 +583,9 @@ const App: React.FC = () => {
           currency: data.currency ?? DEFAULT_CURRENCY,
           emailReports: data.emailReports ?? false,
           reportEmail: data.reportEmail ?? "",
+          reportEmailVerified: data.reportEmailVerified ?? false,
+          reportEmailVerifiedFor: data.reportEmailVerifiedFor ?? "",
+          analyticsConsent: data.analyticsConsent ?? false,
           customExpenseCategories: data.customExpenseCategories ?? [],
           customIncomeCategories: data.customIncomeCategories ?? [],
         });
@@ -580,6 +604,30 @@ const App: React.FC = () => {
     const settingsDocRef = doc(db, `users/${user.uid}/settings`, "preferences");
     await setDoc(settingsDocRef, newSettings, { merge: true });
   };
+
+  const requestReportEmailVerification = async (email: string) => {
+    if (!app || !user || isLocalMode) {
+      throw new Error("Sign in to verify a report email address.");
+    }
+    const requestVerification = httpsCallable<
+      { email: string },
+      { message: string }
+    >(getFunctions(app), "requestReportEmailVerification");
+    await requestVerification({ email: email.trim().toLowerCase() });
+  };
+
+  const handleSendAccountVerification = async () => {
+    if (!user) throw new Error("Sign in to verify your email address.");
+    await sendEmailVerification(user);
+    await reload(user);
+    setUser(getAuth(app!).currentUser);
+    showToast("Verification email sent. Open it to confirm your account email.");
+  };
+
+  // Analytics is deliberately disabled until the signed-in user opts in.
+  React.useEffect(() => {
+    void setAnalyticsConsent(Boolean(user && userSettings.analyticsConsent));
+  }, [user, userSettings.analyticsConsent]);
 
   // Computed categories (default + custom)
   const expenseCategories = useMemo(
@@ -998,6 +1046,93 @@ const App: React.FC = () => {
     );
   };
 
+  const handleExportAllData = async () => {
+    const exportedAt = new Date().toISOString();
+    const account = user
+      ? {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          emailVerified: user.emailVerified,
+          providers: user.providerData.map((provider) => provider.providerId),
+        }
+      : null;
+
+    if (isLocalMode) {
+      exportToJSON(
+        {
+          schemaVersion: 1,
+          exportedAt,
+          account,
+          transactions,
+          goals: savingsGoals,
+          settings: {
+            budgets: { budgetLimit, categoryBudgets },
+            preferences: userSettings,
+          },
+          budgetHistory: budgetSnapshots,
+          receipts: transactions
+            .filter((transaction) => transaction.receipt || transaction.receiptPath)
+            .map(({ id, receipt, receiptPath }) => ({ id, receipt, receiptPath })),
+        },
+        `budget-tracker-full-export-${toDateInputValue()}.json`,
+      );
+      showToast("Downloaded your complete data export.");
+      return;
+    }
+
+    if (!db || !user) throw new Error("Sign in to export your account data.");
+    const userRef = doc(db, `users/${user.uid}`);
+    const [profileSnap, txSnap, goalSnap, settingsSnap, historySnap] =
+      await Promise.all([
+        getDoc(userRef),
+        getDocs(collection(db, `users/${user.uid}/transactions`)),
+        getDocs(collection(db, `users/${user.uid}/goals`)),
+        getDocs(collection(db, `users/${user.uid}/settings`)),
+        getDocs(collection(db, `users/${user.uid}/budgetHistory`)),
+      ]);
+
+    const transactionsForExport = txSnap.docs.map((item) => {
+      const data = item.data();
+      return {
+        id: item.id,
+        ...data,
+        receipt: data.receipt ?? null,
+        receiptPath: data.receiptPath ?? null,
+        amount: fromMinorUnits(
+          Number.isInteger(data.amountCents)
+            ? data.amountCents
+            : toMinorUnits(Number(data.amount) || 0),
+        ),
+      };
+    });
+
+    exportToJSON(
+      {
+        schemaVersion: 1,
+        exportedAt,
+        account,
+        profile: profileSnap.exists() ? profileSnap.data() : null,
+        transactions: transactionsForExport,
+        goals: goalSnap.docs.map((item) => ({ id: item.id, ...item.data() })),
+        settings: Object.fromEntries(
+          settingsSnap.docs.map((item) => [item.id, item.data()]),
+        ),
+        budgetHistory: historySnap.docs.map((item) => ({
+          month: item.id,
+          ...item.data(),
+        })),
+        // Receipt download URLs and storage paths are included so attached
+        // files remain identifiable in a portable export.
+        receipts: transactionsForExport
+          .filter((transaction) => transaction.receipt || transaction.receiptPath)
+          .map(({ id, receipt, receiptPath }) => ({ id, receipt, receiptPath })),
+      },
+      `budget-tracker-full-export-${toDateInputValue()}.json`,
+    );
+    showToast("Downloaded your complete data export.");
+  };
+
   const handleImportCSV = async (
     rows: {
       date: string;
@@ -1087,6 +1222,55 @@ const App: React.FC = () => {
     setBudgetLimit(DEFAULT_BUDGET_LIMIT);
     setCategoryBudgets(defaultCategoryBudgets());
     setBudgetSnapshots([]);
+  };
+
+  const handleDeleteAccount = async (password?: string) => {
+    if (!app || !user || isLocalMode) {
+      throw new Error("Only signed-in cloud accounts can be deleted here.");
+    }
+
+    const currentUser = getAuth(app).currentUser;
+    if (!currentUser) throw new Error("Your sign-in session has expired. Please sign in again.");
+
+    try {
+      const hasPasswordProvider = currentUser.providerData.some(
+        (provider) => provider.providerId === "password",
+      );
+      const hasGoogleProvider = currentUser.providerData.some(
+        (provider) => provider.providerId === "google.com",
+      );
+
+      // Reauthenticate first, before deleting any data. Firebase requires a
+      // recent sign-in for account deletion; this protects an unattended session.
+      if (hasPasswordProvider) {
+        if (!currentUser.email || !password) {
+          throw new Error("Enter your current password to delete this account.");
+        }
+        await reauthenticateWithCredential(
+          currentUser,
+          EmailAuthProvider.credential(currentUser.email, password),
+        );
+      } else if (hasGoogleProvider) {
+        await reauthenticateWithPopup(currentUser, new GoogleAuthProvider());
+      }
+
+      const purgeAccountData = httpsCallable<undefined, { message: string }>(
+        getFunctions(app),
+        "purgeAccountData",
+      );
+      await purgeAccountData();
+      await deleteUser(currentUser);
+      setUser(null);
+      showToast("Your account and stored data have been deleted.");
+    } catch (error: any) {
+      if (error?.code === "auth/requires-recent-login") {
+        throw new Error("For your security, sign out and sign in again before deleting your account.");
+      }
+      if (error?.code === "auth/wrong-password" || error?.code === "auth/invalid-credential") {
+        throw new Error("Your current password was not accepted.");
+      }
+      throw error instanceof Error ? error : new Error("Unable to delete your account.");
+    }
   };
 
   // Styling classes
@@ -2035,12 +2219,17 @@ const App: React.FC = () => {
             }
             darkMode={darkMode}
             onExportData={handleExportData}
+            onExportAllData={handleExportAllData}
             onClearData={handleClearData}
             onShowToast={showToast}
             userSettings={userSettings}
             onUpdateSettings={updateUserSettings}
             expenseCategories={expenseCategories}
             incomeCategories={incomeCategories}
+            user={user}
+            onSendAccountVerification={handleSendAccountVerification}
+            onRequestReportEmailVerification={requestReportEmailVerification}
+            onDeleteAccount={handleDeleteAccount}
           />
         )}
         </div>

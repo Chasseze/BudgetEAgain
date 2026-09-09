@@ -10,14 +10,23 @@ import {
   Globe,
   Plus,
   X,
-  Mail
+  Mail,
+  BadgeCheck,
+  KeyRound,
+  ShieldCheck,
+  UserX,
+  BarChart3,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import { CURRENCIES, DEFAULT_CURRENCY, COLORS } from '../config/constants';
 
 interface UserSettings {
   currency: string;
   emailReports: boolean;
   reportEmail: string;
+  reportEmailVerified: boolean;
+  reportEmailVerifiedFor: string;
+  analyticsConsent: boolean;
   customExpenseCategories: { name: string; color: string; budget?: number }[];
   customIncomeCategories: { name: string; color: string }[];
 }
@@ -29,12 +38,17 @@ interface SettingsSectionProps {
   setCategoryBudgets: (budgets: Record<string, number>) => void;
   darkMode: boolean;
   onExportData: () => void;
+  onExportAllData: () => Promise<void>;
   onClearData: () => void;
   onShowToast: (message: string) => void;
   userSettings: UserSettings;
   onUpdateSettings: (settings: Partial<UserSettings>) => void;
   expenseCategories: string[];
   incomeCategories: string[];
+  user: User | null;
+  onSendAccountVerification: () => Promise<void>;
+  onRequestReportEmailVerification: (email: string) => Promise<void>;
+  onDeleteAccount: (password?: string) => Promise<void>;
 }
 
 const DEFAULT_EXPENSE_CATEGORIES = [
@@ -62,12 +76,17 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   setCategoryBudgets,
   darkMode,
   onExportData,
+  onExportAllData,
   onClearData,
   onShowToast,
   userSettings,
   onUpdateSettings,
   expenseCategories,
   incomeCategories,
+  user,
+  onSendAccountVerification,
+  onRequestReportEmailVerification,
+  onDeleteAccount,
 }) => {
   const [localBudgetLimit, setLocalBudgetLimit] = useState(budgetLimit.toString());
   const [localCategoryBudgets, setLocalCategoryBudgets] = useState<Record<string, string>>(
@@ -83,6 +102,13 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   // Email reports state
   const [emailReports, setEmailReports] = useState(userSettings.emailReports || false);
   const [reportEmail, setReportEmail] = useState(userSettings.reportEmail || '');
+  const [isSendingReportVerification, setIsSendingReportVerification] = useState(false);
+  const [isSendingAccountVerification, setIsSendingAccountVerification] = useState(false);
+  const [isExportingAllData, setIsExportingAllData] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deleteAcknowledgement, setDeleteAcknowledgement] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   
   // Custom categories state
   const [showAddExpenseCategory, setShowAddExpenseCategory] = useState(false);
@@ -113,6 +139,13 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   const inputBg = darkMode
     ? 'bg-gray-700 border-gray-600 text-white'
     : 'bg-white border-gray-300 text-gray-900';
+  const normalizedReportEmail = reportEmail.trim().toLowerCase();
+  const reportEmailIsVerified =
+    userSettings.reportEmailVerified &&
+    userSettings.reportEmailVerifiedFor === normalizedReportEmail;
+  const usesPasswordSignIn = Boolean(
+    user?.providerData.some((provider) => provider.providerId === 'password'),
+  );
 
   const getCurrencySymbol = () => {
     const currency = CURRENCIES.find(c => c.code === selectedCurrency);
@@ -177,11 +210,36 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
   };
 
   const handleSaveEmailSettings = () => {
+    const normalizedEmail = reportEmail.trim().toLowerCase();
+    const emailIsVerified =
+      userSettings.reportEmailVerified &&
+      userSettings.reportEmailVerifiedFor === normalizedEmail;
+    if (emailReports && !emailIsVerified) {
+      onShowToast('Verify the report email address before enabling financial summaries.');
+      return;
+    }
     onUpdateSettings({ 
       emailReports, 
-      reportEmail 
+      reportEmail: normalizedEmail,
     });
     onShowToast('Email settings saved!');
+  };
+
+  const handleRequestReportVerification = async () => {
+    const email = reportEmail.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      onShowToast('Enter a valid report email address.');
+      return;
+    }
+    setIsSendingReportVerification(true);
+    try {
+      await onRequestReportEmailVerification(email);
+      onShowToast(`Verification email sent to ${email}.`);
+    } catch (error) {
+      onShowToast(error instanceof Error ? error.message : 'Unable to send verification email.');
+    } finally {
+      setIsSendingReportVerification(false);
+    }
   };
 
   const handleAddCategory = (type: 'expense' | 'income') => {
@@ -565,20 +623,44 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
               </label>
             </div>
 
-            {emailReports && (
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${textSecondary}`}>
-                  Email Address
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <label className={`block text-sm font-medium ${textSecondary}`}>
+                  Report email address
                 </label>
-                <input
-                  type="email"
-                  value={reportEmail}
-                  onChange={(e) => setReportEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className={`w-full px-4 py-2 rounded-lg border ${inputBg}`}
-                />
+                {reportEmailIsVerified ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <BadgeCheck className="w-4 h-4" /> Verified
+                  </span>
+                ) : (
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    Verification required
+                  </span>
+                )}
               </div>
-            )}
+              <input
+                type="email"
+                value={reportEmail}
+                onChange={(e) => setReportEmail(e.target.value)}
+                placeholder="your@email.com"
+                className={`w-full px-4 py-2 rounded-lg border ${inputBg}`}
+              />
+              <p className={`mt-2 text-xs ${textSecondary}`}>
+                Financial summaries are sent only after this exact address confirms ownership.
+              </p>
+              <button
+                type="button"
+                onClick={handleRequestReportVerification}
+                disabled={isSendingReportVerification || !normalizedReportEmail || reportEmailIsVerified}
+                className="mt-3 w-full py-2.5 rounded-lg border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/30"
+              >
+                {reportEmailIsVerified
+                  ? 'Report email verified'
+                  : isSendingReportVerification
+                    ? 'Sending verification…'
+                    : 'Send verification email'}
+              </button>
+            </div>
           </div>
 
           <button
@@ -672,6 +754,181 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Account & Privacy */}
+      <div className={`${bgCard} rounded-2xl shadow-lg p-6 transition-colors duration-300`}>
+        <div className="flex items-center gap-3 mb-5">
+          <div className={`p-2 rounded-lg ${darkMode ? 'bg-indigo-900/50' : 'bg-indigo-100'}`}>
+            <ShieldCheck className={`w-5 h-5 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+          </div>
+          <div>
+            <h3 className={`text-lg font-semibold ${textPrimary}`}>Account & Privacy</h3>
+            <p className={`text-sm ${textSecondary}`}>Control access, communications, and your personal data</p>
+          </div>
+        </div>
+
+        {user ? (
+          <div className={`rounded-xl p-4 mb-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className={`font-medium break-all ${textPrimary}`}>{user.email || 'Signed-in account'}</p>
+                <p className={`mt-1 text-sm ${user.emailVerified ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  {user.emailVerified ? 'Account email verified' : 'Account email not verified'}
+                </p>
+              </div>
+              {!user.emailVerified && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSendingAccountVerification(true);
+                    try {
+                      await onSendAccountVerification();
+                    } catch (error) {
+                      onShowToast(error instanceof Error ? error.message : 'Unable to send verification email.');
+                    } finally {
+                      setIsSendingAccountVerification(false);
+                    }
+                  }}
+                  disabled={isSendingAccountVerification}
+                  className="shrink-0 px-3 py-2 rounded-lg border border-indigo-200 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                >
+                  {isSendingAccountVerification ? 'Sending…' : 'Verify email'}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className={`text-sm mb-4 ${textSecondary}`}>
+            Account controls are available when you sign in with Firebase.
+          </p>
+        )}
+
+        <div className={`rounded-xl p-4 mb-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className={`w-4 h-4 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+                <p className={`font-medium ${textPrimary}`}>Optional usage analytics</p>
+              </div>
+              <p className={`mt-1 text-sm ${textSecondary}`}>
+                If enabled, Firebase Analytics receives limited app and device-use data. This app does not send your transactions, balances, categories, or report contents as analytics events.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={userSettings.analyticsConsent}
+                onChange={(event) => void onUpdateSettings({ analyticsConsent: event.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={async () => {
+            setIsExportingAllData(true);
+            try {
+              await onExportAllData();
+            } catch (error) {
+              onShowToast(error instanceof Error ? error.message : 'Unable to export all data.');
+            } finally {
+              setIsExportingAllData(false);
+            }
+          }}
+          disabled={isExportingAllData}
+          className={`w-full py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+            darkMode
+              ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          } disabled:opacity-50`}
+        >
+          <Download className="w-5 h-5" />
+          {isExportingAllData ? 'Preparing full export…' : 'Export all account data (JSON)'}
+        </button>
+
+        {user && (
+          <div className={`mt-4 rounded-xl border ${darkMode ? 'border-red-900/70 bg-red-950/20' : 'border-red-200 bg-red-50'} p-4`}>
+            <div className="flex items-start gap-3">
+              <UserX className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className={`font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>Delete account</p>
+                <p className={`mt-1 text-sm ${darkMode ? 'text-red-200/80' : 'text-red-700'}`}>
+                  This permanently deletes your transactions, goals, settings, receipt files, and sign-in account. Export your data first.
+                </p>
+                {!showDeleteAccountConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteAccountConfirm(true)}
+                    className="mt-3 px-3 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700"
+                  >
+                    Delete my account
+                  </button>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <label className={`block text-sm font-medium ${darkMode ? 'text-red-200' : 'text-red-800'}`}>
+                      Type DELETE to confirm
+                      <input
+                        value={deleteAcknowledgement}
+                        onChange={(event) => setDeleteAcknowledgement(event.target.value)}
+                        className={`mt-1.5 w-full px-3 py-2 rounded-lg border ${inputBg}`}
+                        autoComplete="off"
+                      />
+                    </label>
+                    {usesPasswordSignIn && (
+                      <label className={`block text-sm font-medium ${darkMode ? 'text-red-200' : 'text-red-800'}`}>
+                        Current password
+                        <div className="relative mt-1.5">
+                          <KeyRound className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${textSecondary}`} />
+                          <input
+                            type="password"
+                            value={deletePassword}
+                            onChange={(event) => setDeletePassword(event.target.value)}
+                            className={`w-full pl-9 pr-3 py-2 rounded-lg border ${inputBg}`}
+                            autoComplete="current-password"
+                          />
+                        </div>
+                      </label>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteAccountConfirm(false);
+                          setDeleteAcknowledgement('');
+                          setDeletePassword('');
+                        }}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-700'}`}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleteAcknowledgement !== 'DELETE' || (usesPasswordSignIn && !deletePassword) || isDeletingAccount}
+                        onClick={async () => {
+                          setIsDeletingAccount(true);
+                          try {
+                            await onDeleteAccount(deletePassword);
+                          } catch (error) {
+                            onShowToast(error instanceof Error ? error.message : 'Unable to delete your account.');
+                          } finally {
+                            setIsDeletingAccount(false);
+                          }
+                        }}
+                        className="flex-1 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isDeletingAccount ? 'Deleting…' : 'Permanently delete'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* App Info */}

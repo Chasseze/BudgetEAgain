@@ -9,7 +9,11 @@
 // 6. Copy the configuration values below
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAnalytics, isSupported } from 'firebase/analytics';
+import {
+  getAnalytics,
+  isSupported,
+  setAnalyticsCollectionEnabled,
+} from 'firebase/analytics';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
@@ -67,17 +71,6 @@ if (isConfigValid) {
     // Initialize Storage (for receipts/images)
     storage = getStorage(app);
 
-    // Initialize Analytics (only in browser, if supported, and only when a
-    // measurement ID is configured — otherwise gtag loads with id=undefined)
-    if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
-      isSupported().then(supported => {
-        if (supported && app) {
-          analytics = getAnalytics(app);
-          console.log('✅ Firebase Analytics initialized');
-        }
-      });
-    }
-
     console.log('✅ Firebase initialized successfully');
   } catch (error) {
     console.error('❌ Error initializing Firebase:', error);
@@ -97,6 +90,27 @@ export const isFirebaseAvailable = () => isConfigValid && app !== null;
 // with `VITE_ENABLE_LOCAL_MODE=true`.
 export const isLocalModeEnabled =
   import.meta.env.VITE_ENABLE_LOCAL_MODE === "true";
+
+/**
+ * Firebase Analytics is opt-in. It is not initialized until an authenticated
+ * user explicitly enables it in Settings. No financial records are logged as
+ * analytics events by this app.
+ */
+export const setAnalyticsConsent = async (consented: boolean): Promise<void> => {
+  if (!app || !firebaseConfig.measurementId || typeof window === 'undefined') {
+    return;
+  }
+
+  const supported = await isSupported();
+  if (!supported) return;
+
+  if (consented && !analytics) {
+    analytics = getAnalytics(app);
+  }
+  if (analytics) {
+    setAnalyticsCollectionEnabled(analytics, consented);
+  }
+};
 
 // Export the config for reference (without sensitive data in production)
 export const getFirebaseConfig = () => ({

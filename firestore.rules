@@ -12,6 +12,21 @@ service cloud.firestore {
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
+
+    // Only server-side confirmation code may mark a report address as verified.
+    function doesNotSetProtectedReportFields() {
+      return !request.resource.data.keys().hasAny([
+        'reportEmailVerified',
+        'reportEmailVerifiedFor'
+      ]);
+    }
+
+    function protectedReportFieldsAreUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'reportEmailVerified',
+        'reportEmailVerifiedFor'
+      ]);
+    }
     
     // User-specific data rules
     match /users/{userId} {
@@ -28,9 +43,14 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
       
-      // Settings subcollection
+      // Settings subcollection. A client can manage its preferences but cannot
+      // self-verify an arbitrary destination for financial email reports.
       match /settings/{settingId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && (settingId != 'preferences' || doesNotSetProtectedReportFields());
+        allow update: if isOwner(userId)
+          && (settingId != 'preferences' || protectedReportFieldsAreUnchanged());
       }
 
       // Budget history snapshots subcollection
