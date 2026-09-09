@@ -92,6 +92,12 @@ export { app, analytics, db, auth, storage };
 // Export a helper to check if Firebase is available
 export const isFirebaseAvailable = () => isConfigValid && app !== null;
 
+// Local mode is useful for deliberate, single-device demos, but it must never
+// silently replace a configured account. Opt in explicitly in a local env file
+// with `VITE_ENABLE_LOCAL_MODE=true`.
+export const isLocalModeEnabled =
+  import.meta.env.VITE_ENABLE_LOCAL_MODE === "true";
+
 // Export the config for reference (without sensitive data in production)
 export const getFirebaseConfig = () => ({
   projectId: firebaseConfig.projectId,

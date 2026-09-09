@@ -94,7 +94,13 @@ import {
   CURRENCIES,
   DEFAULT_CURRENCY,
 } from "./config/constants";
-import { db, app, storage } from "./config/firebase";
+import {
+  db,
+  app,
+  storage,
+  isFirebaseAvailable,
+  isLocalModeEnabled,
+} from "./config/firebase";
 import {
   collection,
   addDoc,
@@ -201,8 +207,8 @@ const App: React.FC = () => {
     STORAGE_KEYS.DARK_MODE,
     false,
   );
-  // A fully local mode keeps the app useful when Firebase is intentionally
-  // unconfigured (or when someone wants a private, single-device budget).
+  // Local mode is available only when a developer explicitly enables it. A
+  // missing Firebase config must not make a production account look empty.
   const [localTransactions, setLocalTransactions] = useLocalStorage<Transaction[]>(
     STORAGE_KEYS.TRANSACTIONS,
     [],
@@ -223,7 +229,8 @@ const App: React.FC = () => {
     "budget_tracker_preferences",
     DEFAULT_USER_SETTINGS,
   );
-  const isLocalMode = !db || !app;
+  const isLocalMode = isLocalModeEnabled;
+  const isFirebaseUnavailable = !isLocalMode && !isFirebaseAvailable();
 
   // UI State
   const [activeTab, setActiveTab] = useState("home");
@@ -739,6 +746,22 @@ const App: React.FC = () => {
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading Budget Tracker...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isFirebaseUnavailable) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6">
+        <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">
+          <Wallet className="mx-auto mb-4 h-10 w-10 text-indigo-600" />
+          <h1 className="text-xl font-bold text-gray-900">Connection setup needed</h1>
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            Budget Tracker could not connect to its secure data service. Your
+            saved information has not been changed. Please refresh shortly or
+            contact the app owner if this message persists.
+          </p>
         </div>
       </div>
     );
