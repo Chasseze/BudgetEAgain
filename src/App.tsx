@@ -646,7 +646,7 @@ const App: React.FC = () => {
   const budgetUsedPercent =
     budgetLimit > 0 ? (totalExpenses / budgetLimit) * 100 : 0;
 
-  const expensesByCategory = useMemo(
+  const categoryExpenseData = useMemo(
     () =>
       expenseCategories
         .map((cat) => {
@@ -658,20 +658,36 @@ const App: React.FC = () => {
             value: filteredByDate
               .filter((t) => t.type === "expense" && t.category === cat)
               .reduce((sum, t) => sum + t.amount, 0),
-            budget: categoryBudgets[cat] || 0,
+            // Custom categories store their starting budget in preferences;
+            // built-in categories use the dedicated category-budget settings.
+            budget:
+              categoryBudgets[cat] ??
+              customCatConfig?.budget ??
+              CATEGORY_CONFIG[cat]?.budget ??
+              0,
             color:
               customCatConfig?.color ||
               CATEGORY_CONFIG[cat]?.color ||
               "#85C1E2",
           };
-        })
-        .filter((item) => item.value > 0),
+        }),
     [
       expenseCategories,
       filteredByDate,
       categoryBudgets,
       userSettings.customExpenseCategories,
     ],
+  );
+
+  // Charts that describe spending only should not render zero-value pie slices,
+  // whereas budget progress needs every funded category for an honest total.
+  const expensesByCategory = useMemo(
+    () => categoryExpenseData.filter((item) => item.value > 0),
+    [categoryExpenseData],
+  );
+  const categoryBudgetProgressData = useMemo(
+    () => categoryExpenseData.filter((item) => item.budget > 0),
+    [categoryExpenseData],
   );
 
   const filteredTransactions = useMemo(
@@ -898,7 +914,7 @@ const App: React.FC = () => {
       if (!restored) void deleteReceipt(transaction.receiptPath);
     }, 5_100);
 
-    // Offer undo ΓÇö re-add the transaction if user taps Undo before toast dismisses
+    // Offer undo — re-add the transaction if the user taps Undo before toast dismisses.
     showToast("Transaction deleted", async () => {
       restored = true;
       window.clearTimeout(cleanupTimer);
@@ -1234,7 +1250,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Desktop Navigation ΓÇö sliding pill */}
+        {/* Desktop navigation — sliding pill */}
         {(() => {
           const tabList = [
             "home",
@@ -1389,7 +1405,7 @@ const App: React.FC = () => {
                         })}
                       </p>
                       <p className={`mt-1 text-[11px] ${darkMode ? "text-white/70" : "text-slate-500"}`}>
-                        YouΓÇÖve used{" "}
+                        You've used{" "}
                         <span className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>
                           {Math.min(
                             100,
@@ -1715,7 +1731,7 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Category chips ΓÇö quick filter */}
+            {/* Category chips — quick filter */}
             {(() => {
               const usedCategories = [
                 ...new Set(
@@ -1906,7 +1922,7 @@ const App: React.FC = () => {
                 Category Budget Progress
               </h2>
               <CategoryBudgetChart
-                data={expensesByCategory}
+                data={categoryBudgetProgressData}
                 darkMode={darkMode}
                 currencySymbol={currencySymbol}
               />

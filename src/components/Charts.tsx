@@ -416,8 +416,77 @@ export const CategoryBudgetChart: React.FC<CategoryBudgetChartProps> = ({
     );
   }
 
+  const totalSpent = budgetData.reduce((sum, item) => sum + item.spent, 0);
+  const totalBudget = budgetData.reduce((sum, item) => sum + item.budget, 0);
+  const totalPercentage =
+    totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+  const visiblePercentage = Math.min(totalPercentage, 100);
+  const remaining = Math.max(totalBudget - totalSpent, 0);
+  const formatAmount = (amount: number) =>
+    amount.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const progressColor =
+    totalPercentage >= 100
+      ? "#ef4444"
+      : totalPercentage >= 80
+        ? "#f59e0b"
+        : "#6366f1";
+
   return (
     <div className="space-y-4">
+      <div
+        className={`rounded-xl border p-4 ${
+          darkMode
+            ? "border-indigo-800/70 bg-indigo-950/30"
+            : "border-indigo-100 bg-indigo-50/70"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p
+              className={`text-sm font-semibold ${darkMode ? "text-indigo-200" : "text-indigo-950"}`}
+            >
+              Cumulative budget used
+            </p>
+            <p
+              className={`mt-1 text-xs ${darkMode ? "text-indigo-300/80" : "text-indigo-700"}`}
+            >
+              {currencySymbol}{formatAmount(totalSpent)} of {currencySymbol}
+              {formatAmount(totalBudget)} across category budgets
+            </p>
+          </div>
+          <span
+            className={`shrink-0 text-lg font-bold ${darkMode ? "text-white" : "text-indigo-950"}`}
+          >
+            {totalPercentage.toFixed(0)}%
+          </span>
+        </div>
+        <div
+          className={`mt-3 h-2.5 overflow-hidden rounded-full ${
+            darkMode ? "bg-gray-700" : "bg-indigo-100"
+          }`}
+          role="progressbar"
+          aria-label="Cumulative category budget used"
+          aria-valuemin={0}
+          aria-valuemax={totalBudget}
+          aria-valuenow={Math.min(totalSpent, totalBudget)}
+        >
+          <div
+            className="h-full rounded-full transition-all duration-500 ease-out"
+            style={{
+              width: `${visiblePercentage}%`,
+              backgroundColor: progressColor,
+            }}
+          />
+        </div>
+        <p
+          className={`mt-2 text-xs ${darkMode ? "text-gray-400" : "text-gray-600"}`}
+        >
+          {totalSpent > totalBudget
+            ? `${currencySymbol}${formatAmount(totalSpent - totalBudget)} over your total category budget`
+            : `${currencySymbol}${formatAmount(remaining)} remaining in your category budgets`}
+        </p>
+      </div>
+
       {budgetData.map((item, index) => (
         <div key={index} className="space-y-1">
           <div className="flex justify-between items-center text-sm">
