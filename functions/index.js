@@ -38,7 +38,12 @@ function createMailTransport() {
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
-    auth: { user: SMTP_USER.value(), pass: SMTP_PASS.value() },
+    auth: {
+      user: SMTP_USER.value().trim(),
+      pass: SMTP_PASS.value().replace(/\s/g, ""),
+    },
+    connectionTimeout: 15000,
+    socketTimeout: 30000,
   });
 }
 
@@ -71,13 +76,6 @@ function monthKeyOf(date) {
 
 function monthLabelOf(date, style = "long") {
   return date.toLocaleDateString("en-US", { month: style, year: "numeric" });
-}
-
-/** Previous month (relative to now) as YYYY-MM plus a human label. */
-function previousMonth() {
-  const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return { date: prev, key: monthKeyOf(prev), label: monthLabelOf(prev) };
 }
 
 // ---------------------------------------------------------------------------
@@ -560,11 +558,21 @@ exports.sendMonthlyReports = onSchedule(
   {
     schedule: "0 8 1 * *", // 08:00 UTC on the 1st of each month
     timeZone: "UTC",
+    timeoutSeconds: 540,
+    retryCount: 3,
+    minBackoffSeconds: 600,
+    maxBackoffSeconds: 3600,
     secrets: [SMTP_USER, SMTP_PASS],
   },
-  async () => {
+  async (event) => {
     const db = admin.firestore();
-    const { date: reportDate, key: reportMonth, label: reportLabel } = previousMonth();
+    // Keep retries tied to the original scheduled month, even across a month boundary.
+    const scheduledDate = new Date(event.scheduleTime);
+    const reportDate = new Date(
+      scheduledDate.getUTCFullYear(), scheduledDate.getUTCMonth() - 1, 1,
+    );
+    const reportMonth = monthKeyOf(reportDate);
+    const reportLabel = monthLabelOf(reportDate);
     const priorDate = new Date(reportDate.getFullYear(), reportDate.getMonth() - 1, 1);
     const priorMonth = monthKeyOf(priorDate);
     const priorLabel = monthLabelOf(priorDate);
@@ -582,13 +590,20 @@ exports.sendMonthlyReports = onSchedule(
     const in30Days = toDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30));
 
     const transporter = createMailTransport();
+    // Fail the invocation before processing recipients if Gmail rejects the sender.
+    await transporter.verify();
 
     // users/{uid} docs are "virtual" (subcollections only), so list refs
     const userRefs = await db.collection("users").listDocuments();
     logger.info(`Monthly report run for ${reportMonth}: ${userRefs.length} users`);
 
     let sent = 0;
+    let failed = 0;
     for (const userRef of userRefs) {
+      const deliveryRef = db.collection("monthlyReportDeliveries")
+        .doc(`${reportMonth}_${userRef.id}`);
+      let claimed = false;
+      let smtpAccepted = false;
       try {
         const prefsSnap = await userRef.collection("settings").doc("preferences").get();
         const prefs = prefsSnap.data();
@@ -618,6 +633,26 @@ exports.sendMonthlyReports = onSchedule(
           reportMonth,
         );
         if (reportAgg.count === 0) continue;
+
+        // A server-only ledger prevents retries from resending successful reports.
+        // The lease outlasts this function's timeout to protect overlapping runs.
+        const claim = await db.runTransaction(async (transaction) => {
+          const delivery = (await transaction.get(deliveryRef)).data();
+          if (delivery?.status === "sent") return "sent";
+          if (delivery?.leaseUntil?.toMillis() > Date.now()) return "busy";
+          transaction.set(deliveryRef, {
+            status: "sending",
+            reportMonth,
+            leaseUntil: admin.firestore.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+          });
+          return "claimed";
+        });
+        if (claim === "sent") continue;
+        if (claim === "busy") {
+          failed++;
+          continue;
+        }
+        claimed = true;
 
         const transactions = txSnap.docs.map((d) => d.data());
         const priorAgg = aggregateMonth(transactions, priorMonth);
@@ -668,11 +703,26 @@ exports.sendMonthlyReports = onSchedule(
             currency,
           }),
         });
+        smtpAccepted = true;
+        await deliveryRef.set({
+          status: "sent",
+          reportMonth,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        claimed = false;
         sent++;
       } catch (err) {
-        logger.error(`Report failed for ${userRef.id}`, err);
+        failed++;
+        logger.error("Monthly report delivery failed", {
+          reportMonth, uid: userRef.id, code: err.code || "UNKNOWN",
+          responseCode: err.responseCode || null,
+        });
+        if (claimed && !smtpAccepted) {
+          await deliveryRef.set({ status: "failed", reportMonth });
+        }
       }
     }
-    logger.info(`Monthly reports sent: ${sent}`);
+    logger.info("Monthly report run completed", { reportMonth, sent, failed });
+    if (failed > 0) throw new Error(`${failed} monthly report deliveries failed`);
   },
 );
