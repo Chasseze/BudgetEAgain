@@ -567,7 +567,9 @@ exports.sendMonthlyReports = onSchedule(
   async (event) => {
     const db = admin.firestore();
     // Keep retries tied to the original scheduled month, even across a month boundary.
-    const scheduledDate = new Date(event.scheduleTime);
+    // Run-now requests can carry the NEXT scheduled date. Clamp that to now
+    // while preserving past schedule times for retries across month boundaries.
+    const scheduledDate = new Date(Math.min(Date.parse(event.scheduleTime), Date.now()));
     const reportDate = new Date(
       scheduledDate.getUTCFullYear(), scheduledDate.getUTCMonth() - 1, 1,
     );

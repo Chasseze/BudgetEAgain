@@ -62,7 +62,7 @@ function setup({ authFails = false, failRecipient = null } = {}) {
   vm.runInNewContext(fs.readFileSync(require.resolve("../index.js"), "utf8"), {
     require: (name) => modules[name], exports: {}, process, Date, console,
   });
-  return { ledger, deliveries, options, run: () => handler({ scheduleTime: "2026-10-01T08:00:00Z" }),
+  return { ledger, deliveries, options, run: (scheduleTime = "2026-10-01T08:00:00Z") => handler({ scheduleTime }),
     recover: () => { failRecipient = null; } };
 }
 
@@ -93,4 +93,17 @@ test("an overlapping run leaves an active claim alone and requests a retry", asy
   await assert.rejects(app.run(), /1 monthly report deliveries failed/);
   assert.equal(app.deliveries.length, 1);
   assert.equal(app.deliveries[0].to, "bob@example.com");
+});
+
+test("run-now with a future schedule reports the previous calendar month", async () => {
+  const app = setup();
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-10-11T15:00:00Z");
+  try {
+    await app.run("2026-11-01T08:00:00Z");
+    assert.equal(app.deliveries.length, 2);
+    assert.equal(app.deliveries[0].subject, "Your September 2026 budget report");
+  } finally {
+    Date.now = realNow;
+  }
 });

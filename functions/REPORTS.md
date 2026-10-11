@@ -29,8 +29,9 @@ atomically: a process crash after SMTP acceptance but before recording success
 can still cause a duplicate after the lease expires. Gmail acceptance also does
 not prove inbox delivery.
 
-Do not blindly run the scheduler to backfill an older month: manual executions
-use the current schedule time and target the preceding month. Check the ledger
+Do not blindly run the scheduler to backfill an older month: run-now requests
+can carry the next scheduled date, which the function clamps to the current
+time to target the preceding month. Check the ledger
 and intended recipients before any backfill.
 
 Run regression tests with:
